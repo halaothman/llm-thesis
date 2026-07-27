@@ -14,11 +14,7 @@ Thumbs.db
 desktop.ini
 
 # أدوات عرض مؤقتة / ملفات تشغيل محلية
-tools/cloudflared.exe
 uploads/
-
-# توثيق الرسالة (محلي فقط — لا يُرفع على GitHub)
-docs/
 
 # فهارس FAISS (تُبنى محلياً من data-sources — حجمها كبير)
 indexes/
