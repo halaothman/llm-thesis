@@ -1,3 +1,4 @@
+"""نقطة دخول Streamlit: الصفحة الرئيسية، شريط التنقل، وفحص حالة Ollama والفهارس."""
 import streamlit as st
 import logging
 

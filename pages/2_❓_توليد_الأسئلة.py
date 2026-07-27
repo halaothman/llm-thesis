@@ -1,3 +1,4 @@
+"""صفحة توليد الأسئلة: Vanilla و RAG وأسئلة رياضية، مع حفظ JSON وعرض الاختبار."""
 import streamlit as st
 import os
 import json

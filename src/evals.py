@@ -1,3 +1,4 @@
+"""حساب المقاييس الآلية: BLEU و BERTScore و Perplexity و F1 وغيرها على الأسئلة."""
 import numpy as np
 import pandas as pd
 from .embeddings import embed_texts

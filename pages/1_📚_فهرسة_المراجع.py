@@ -1,3 +1,4 @@
+"""صفحة فهرسة المراجع: رفع الملفات، تقسيم النص، وبناء/تحديث فهارس FAISS."""
 import streamlit as st
 import os
 import uuid

@@ -1,3 +1,4 @@
+"""تنظيف النص العربي و stemming لتحسين الفهرسة والاسترجاع."""
 import re
 from nltk.stem.snowball import SnowballStemmer
 

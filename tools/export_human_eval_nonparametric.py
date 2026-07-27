@@ -1,4 +1,4 @@
-"""Export Mann-Whitney U, rank-biserial r_rb, and Holm-corrected p-values from human-eval CSVs."""
+"""تصدير Mann-Whitney U و rank-biserial وتصحيح Holm من ملفات التقييم البشري CSV إلى outputs/."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu
 
+# --- مسارات ملفات التقييم البشري وملف النتيجة ---
 ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = ROOT / "outputs" / "human_evaluation_nonparametric.csv"
 
@@ -21,6 +22,7 @@ FILES = {
     },
 }
 
+# --- معايير التقييم البشري (عربي + اسم إنجليزي للتقرير) ---
 METRICS = [
     ("الوضوح اللغوي", "linguistic_clarity"),
     ("الصياغة المنطقية", "logical_formulation"),
@@ -31,6 +33,7 @@ METRICS = [
 
 
 def holm_bonferroni(p_values: list[float]) -> list[float]:
+    """تصحيح p-values متعددة الاختبارات بطريقة Holm-Bonferroni."""
     p = np.asarray(p_values, dtype=float)
     if len(p) == 0:
         return []
@@ -47,6 +50,7 @@ def holm_bonferroni(p_values: list[float]) -> list[float]:
 
 
 def effect_magnitude(r_rb: float) -> str:
+    """تصنيف حجم الأثر حسب rank-biserial."""
     abs_rb = abs(r_rb)
     if abs_rb < 0.147:
         return "Small"
@@ -58,6 +62,7 @@ def effect_magnitude(r_rb: float) -> str:
 
 
 def load_scores(path: Path, column: str) -> np.ndarray:
+    """قراءة درجات معيار واحد من CSV مع استبعاد صف المتوسط."""
     df = pd.read_csv(path, encoding="utf-8")
     if "#" in df.columns:
         df = df[df["#"].astype(str) != "المتوسط"]
@@ -65,6 +70,7 @@ def load_scores(path: Path, column: str) -> np.ndarray:
 
 
 def main() -> None:
+    """مقارنة Vanilla مقابل RAG لكل نموذج ومعيار، ثم حفظ CSV."""
     rows: list[dict] = []
 
     for model, paths in FILES.items():
@@ -98,6 +104,7 @@ def main() -> None:
                 rows.append(row)
                 continue
 
+            # --- Mann-Whitney بين Vanilla و RAG ---
             u_stat, p_value = mannwhitneyu(vanilla, rag, alternative="two-sided")
             r_rb = 1 - (2 * u_stat) / (len(vanilla) * len(rag))
 
@@ -112,6 +119,7 @@ def main() -> None:
             p_raw_list.append(float(p_value))
             pending.append(row)
 
+        # --- Holm لكل معايير النموذج ثم إضافة الصفوف ---
         adjusted = holm_bonferroni(p_raw_list)
         for row, p_holm in zip(pending, adjusted):
             row["p_holm"] = round(p_holm, 4)

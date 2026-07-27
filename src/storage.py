@@ -1,3 +1,4 @@
+"""حفظ وتحميل ملفات الأسئلة JSON (مجلد outputs/ وبنية metadata للرسالة)."""
 import json
 import os
 from datetime import datetime

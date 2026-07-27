@@ -1,3 +1,4 @@
+"""بناء prompts، استدعاء Ollama، التحقق من JSON، وتوليد/إصلاح الأسئلة (Vanilla/RAG/رياضيات)."""
 import json
 import ollama
 import re

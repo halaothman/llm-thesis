@@ -1,4 +1,4 @@
-"""Mann-Whitney U, rank-biserial, and Holm correction for automatic metrics (JSON corpus)."""
+"""تصدير نتائج Mann-Whitney U ومعامل rank-biserial وتصحيح Holm للمقاييس الآلية من JSON في outputs/."""
 from __future__ import annotations
 
 import json
@@ -8,10 +8,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu
 
+# --- مسارات المشروع وملف الإخراج ---
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUTS = ROOT / "outputs"
 OUT_PATH = OUTPUTS / "automatic_evaluation_nonparametric.csv"
 
+# --- المقاييس والمقارنات المستخدمة في التحليل ---
 METRICS = ["precision", "recall", "f1_score", "bleu", "bert_score", "perplexity"]
 METRIC_LABELS = {
     "precision": "Precision",
@@ -30,6 +32,7 @@ COMPARISONS = [
 
 
 def holm_bonferroni(p_values: list[float]) -> list[float]:
+    """تصحيح p-values متعددة الاختبارات بطريقة Holm-Bonferroni."""
     p = np.asarray(p_values, dtype=float)
     if len(p) == 0:
         return []
@@ -46,6 +49,7 @@ def holm_bonferroni(p_values: list[float]) -> list[float]:
 
 
 def effect_magnitude(r_rb: float) -> str:
+    """تصنيف حجم الأثر حسب قيمة rank-biserial."""
     abs_rb = abs(r_rb)
     if abs_rb < 0.147:
         return "Small"
@@ -57,6 +61,7 @@ def effect_magnitude(r_rb: float) -> str:
 
 
 def rag_condition(path: Path) -> str | None:
+    """استنتاج شرط التجربة (Vanilla / RAG-baseline / RAG-improved) من اسم ملف JSON."""
     parts = path.stem.split("_")
     if len(parts) < 3:
         return None
@@ -69,6 +74,7 @@ def rag_condition(path: Path) -> str | None:
 
 
 def load_question_metrics() -> pd.DataFrame:
+    """جمع مقاييس كل سؤال من جميع ملفات questions_*.json تحت outputs/."""
     rows = []
     for path in OUTPUTS.rglob("questions_*.json"):
         if "UPDATED" in path.stem.upper():
@@ -96,6 +102,7 @@ def load_question_metrics() -> pd.DataFrame:
 
 
 def add_rag_all(df: pd.DataFrame) -> pd.DataFrame:
+    """إضافة مجموعة RAG-all بدمج baseline و improved معاً."""
     rag = df[df["condition"].isin(["RAG-baseline", "RAG-improved"])].copy()
     rag["condition"] = "RAG-all"
     return pd.concat([df, rag], ignore_index=True)
@@ -108,6 +115,7 @@ def compare_group(
     vanilla_label: str,
     rag_label: str,
 ) -> list[dict]:
+    """Mann-Whitney U بين Vanilla و RAG لكل مقياس لنموذج واحد."""
     sub = df[df["model"] == model]
     rows: list[dict] = []
     p_raw_list: list[float] = []
@@ -141,6 +149,7 @@ def compare_group(
             rows.append(row)
             continue
 
+        # --- اختبار Mann-Whitney وحساب حجم الأثر ---
         u_stat, p_value = mannwhitneyu(vanilla, rag, alternative="two-sided")
         r_rb = 1 - (2 * u_stat) / (len(vanilla) * len(rag))
         row.update(
@@ -154,6 +163,7 @@ def compare_group(
         p_raw_list.append(float(p_value))
         pending.append(row)
 
+    # --- تطبيق Holm على p-values ثم إكمال الصفوف ---
     adjusted = holm_bonferroni(p_raw_list)
     for row, p_holm in zip(pending, adjusted):
         row["p_holm"] = round(p_holm, 4)
@@ -164,6 +174,7 @@ def compare_group(
 
 
 def main() -> None:
+    """تحميل البيانات، تشغيل كل المقارنات، وحفظ CSV."""
     df = load_question_metrics()
     if df.empty:
         raise SystemExit("No automatic metric data found in outputs/.")

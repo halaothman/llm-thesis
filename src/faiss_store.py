@@ -1,3 +1,4 @@
+"""إنشاء وتحديث والبحث في فهرس FAISS مع ملف metadata بصيغة JSONL."""
 import faiss
 import json
 import os

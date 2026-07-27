@@ -1,3 +1,4 @@
+"""صفحة المقارنة والتحليل: إحصائيات ورسوم بيانية لمقارنة Vanilla مقابل RAG."""
 import json
 import math
 import textwrap

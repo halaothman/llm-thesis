@@ -1,3 +1,4 @@
+"""استخراج النص الخام من PDF و DOCX و TXT و MD."""
 import pdfplumber
 import docx
 import os

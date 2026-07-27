@@ -1,3 +1,4 @@
+"""تقسيم ملفات أسئلة مجمّعة إلى ملفات منفصلة حسب مصدر النص."""
 import json
 import os
 from pathlib import Path

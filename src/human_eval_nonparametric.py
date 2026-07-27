@@ -1,4 +1,4 @@
-"""Generate outputs/human_evaluation_nonparametric.csv (wrapper)."""
+"""تشغيل tools/export_human_eval_nonparametric.py لإنتاج CSV التحليل اللاپarametric."""
 from __future__ import annotations
 
 import runpy

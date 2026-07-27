@@ -1,12 +1,4 @@
-"""
-RAG question generation workflow — thesis figure (indexing + inference).
-
-Outputs:
-  docs/figures/rag_question_generation_workflow.svg
-  docs/figures/rag_question_generation_workflow.png
-  docs/figures/rag_question_generation_workflow.svg
-  docs/figures/rag_question_generation_workflow.png
-"""
+"""رسم مخطط سير عمل RAG (فهرسة + استنتاج) وحفظه SVG/PNG في docs/figures للرسالة."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,10 +6,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
+# --- مسار حفظ الأشكال ---
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "figures"
 PRES_OUT = OUT
 
+# --- ألوان وخطوط المخطط ---
 BORDER = "#1B4F72"
 TEXT = "#000000"
 ARROW = "#1B4F72"
@@ -34,6 +28,7 @@ plt.rcParams.update(
     }
 )
 
+# --- خطوات مرحلة الفهرسة ومرحلة الاستنتاج ---
 INDEX_STEPS = [
     "Input Document",
     "Extract Text",
@@ -58,6 +53,7 @@ INFERENCE_STEPS = [
 
 
 def _box(ax, x, y, w, h):
+    """رسم مستطيل مستدير (صندوق خطوة)."""
     ax.add_patch(
         FancyBboxPatch(
             (x, y),
@@ -73,6 +69,7 @@ def _box(ax, x, y, w, h):
 
 
 def _v_arrow(ax, x, y1, y2):
+    """سهم عمودي بين خطوتين."""
     ax.add_patch(
         FancyArrowPatch(
             (x, y1),
@@ -89,6 +86,7 @@ def _v_arrow(ax, x, y1, y2):
 
 
 def _draw_step(ax, x, y, w, h, label, font_size):
+    """رسم صندوق خطوة مع النص في المنتصف."""
     cx = x + w / 2
     _box(ax, x, y, w, h)
     ax.text(
@@ -106,6 +104,7 @@ def _draw_step(ax, x, y, w, h, label, font_size):
 
 
 def build_rag_workflow_figure(*, presentation: bool = False) -> plt.Figure:
+    """بناء الشكل الكامل: عنوان + مرحلتا Indexing و Inference."""
     if presentation:
         fig_w, fig_h = 10.5, 18.0
         box_w, box_h = 7.8, 0.66
@@ -141,6 +140,7 @@ def build_rag_workflow_figure(*, presentation: bool = False) -> plt.Figure:
     y -= 0.55
 
     def draw_phase(title, steps, *, continue_from=None, extra_gap_before=0.0):
+        """رسم عنوان مرحلة ثم سلسلة خطوات متصلة بأسهم."""
         nonlocal y
         y -= extra_gap_before
         ax.text(
@@ -171,6 +171,7 @@ def build_rag_workflow_figure(*, presentation: bool = False) -> plt.Figure:
 
 
 def save_figure(fig: plt.Figure, stem: str, out_dir: Path) -> None:
+    """حفظ الشكل بصيغ SVG و PNG."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for ext in ("svg", "png"):
         path = out_dir / f"{stem}.{ext}"
@@ -179,6 +180,7 @@ def save_figure(fig: plt.Figure, stem: str, out_dir: Path) -> None:
 
 
 def main() -> None:
+    """توليد نسخة الرسالة ونسخة العرض وحفظهما."""
     fig = build_rag_workflow_figure(presentation=False)
     save_figure(fig, "rag_question_generation_workflow", OUT)
     plt.close(fig)
