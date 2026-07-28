@@ -20,8 +20,6 @@ try:
     from src.storage import save_group
     from src.embeddings import embed_texts, get_model_name, get_model_info
     from src.config import get_rag_version, set_rag_version, get_index_paths
-    # إضافة الوظائف الجديدة لحل الأسئلة وتصحيح الإجابات
-    from src.quiz_ui import render_quiz, grade, display_quiz_results, validate_questions_format, add_missing_correct_answers
 except ImportError as e:
     st.error(f"خطأ في استيراد الوحدات: {e}")
     st.stop()
@@ -74,7 +72,7 @@ st.markdown("""
         text-align: right;
     }
     
-    /* محاذاة النصوص في الـ quiz */
+    /* محاذاة العناوين */
     .stMarkdown h3 {
         direction: rtl;
         text-align: right;
@@ -116,6 +114,46 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("توليد الأسئلة (Vanilla & RAG)")
+
+
+def display_questions_with_answers(questions: dict) -> None:
+    """عرض الأسئلة مع الإجابات الصحيحة (بدون واجهة اختبار)."""
+    if not questions or not isinstance(questions, dict):
+        st.info("لا توجد أسئلة للعرض.")
+        return
+
+    mcq_list = questions.get("mcq") or []
+    if mcq_list:
+        st.markdown("#### أسئلة الاختيار من متعدد")
+        for i, mcq in enumerate(mcq_list, 1):
+            if not isinstance(mcq, dict):
+                continue
+            q_text = mcq.get("q") or mcq.get("question") or ""
+            if not q_text:
+                continue
+            st.markdown(f"**{i}.** {q_text}")
+            for opt in mcq.get("options") or []:
+                st.markdown(f"- {opt}")
+            st.markdown(f"**الإجابة الصحيحة:** {mcq.get('answer', '—')}")
+            st.divider()
+
+    tf_list = questions.get("tf") or []
+    if tf_list:
+        st.markdown("#### أسئلة صح / خطأ")
+        for i, tf in enumerate(tf_list, 1):
+            if not isinstance(tf, dict):
+                continue
+            q_text = tf.get("q") or tf.get("question") or ""
+            if not q_text:
+                continue
+            ans = tf.get("answer")
+            if isinstance(ans, bool):
+                ans_label = "صح" if ans else "خطأ"
+            else:
+                ans_label = str(ans)
+            st.markdown(f"**{i}.** {q_text}")
+            st.markdown(f"**الإجابة:** {ans_label}")
+            st.divider()
 
 # اختيار النموذج في بداية الصفحة
 st.subheader("اختر النموذج")
@@ -670,107 +708,20 @@ with col2:
                         st.error(f"خطأ في توليد الأسئلة: {e}")
 
 # عرض الأسئلة المولدة
-if hasattr(st.session_state, 'vanilla_generated') and st.session_state.vanilla_generated:
+if hasattr(st.session_state, "vanilla_generated") and st.session_state.vanilla_generated:
     st.subheader("الأسئلة المولدة (Vanilla)")
-    
-    # التحقق من صحة تنسيق الأسئلة وإضافة الإجابات الصحيحة المفقودة
-    if not validate_questions_format(st.session_state.vanilla_questions):
-        st.warning("تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
-        st.session_state.vanilla_questions = add_missing_correct_answers(st.session_state.vanilla_questions)
-    
-    # عرض الأسئلة كواجهة تفاعلية
-    answers_vanilla = render_quiz(st.session_state.vanilla_questions, prefix="vanilla_")
-    
-    # أزرار التحكم
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("تصحيح الإجابات (Vanilla)", key="grade_vanilla"):
-            if answers_vanilla:
-                score, total, results = grade(answers_vanilla, st.session_state.vanilla_questions, prefix="vanilla_")
-                display_quiz_results(score, total, results)
-            else:
-                st.warning("يرجى حل الأسئلة أولاً قبل التصحيح")
-    
-    with col2:
-        if st.button("حفظ الأسئلة (فقط)", key="save_vanilla", type="primary"):
-            with st.spinner("جاري حفظ الأسئلة..."):
-                try:
-                    from src.storage import save_questions_separate_file
-                    
-                    # إضافة النص المصدر للبيانات
-                    questions_data = st.session_state.vanilla_questions.copy()
-                    questions_data["source_text"] = raw_text
-                    questions_data["lang"] = lang
-                    
-                    filename, total_questions = save_questions_separate_file(
-                        questions_data=questions_data,
-                        model_name=model_name,
-                        method="vanilla",
-                        source_file=up.name,
-                        lang=lang
-                    )
-                    
-                    st.success(f"تم حفظ {total_questions} سؤال بنجاح!")
-                    st.info(f"الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
-                    
-                except Exception as e:
-                    st.error(f"خطأ في حفظ الأسئلة: {e}")
+    display_questions_with_answers(st.session_state.vanilla_questions)
 
-if hasattr(st.session_state, 'rag_generated') and st.session_state.rag_generated:
+if hasattr(st.session_state, "rag_generated") and st.session_state.rag_generated:
     st.subheader("الأسئلة المولدة (RAG)")
-    
-    # عرض المصادر المستخدمة
+
     if st.session_state.rag_questions.get("sources"):
         with st.expander("المصادر المستخدمة في التوليد"):
             for i, source in enumerate(st.session_state.rag_questions["sources"], 1):
-                st.markdown(f"""
-                **المصدر {i}:**
-                -  الملف: `{source['filename']}`
-                -  درجة التشابه: {source['score']:.3f}
-                -  النص: {source['text'][:200]}...
-                """)
-    
-    # التحقق من صحة تنسيق الأسئلة وإضافة الإجابات الصحيحة المفقودة
-    if not validate_questions_format(st.session_state.rag_questions):
-        st.warning("تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
-        st.session_state.rag_questions = add_missing_correct_answers(st.session_state.rag_questions)
-    
-    # عرض الأسئلة كواجهة تفاعلية
-    answers_rag = render_quiz(st.session_state.rag_questions, prefix="rag_")
-    
-    # أزرار التحكم
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("تصحيح الإجابات (RAG)", key="grade_rag"):
-            if answers_rag:
-                score, total, results = grade(answers_rag, st.session_state.rag_questions, prefix="rag_")
-                display_quiz_results(score, total, results)
-            else:
-                st.warning("يرجى حل الأسئلة أولاً قبل التصحيح")
-    
-    with col2:
-        if st.button("حفظ الأسئلة (فقط)", key="save_rag", type="primary"):
-            with st.spinner("جاري حفظ الأسئلة..."):
-                try:
-                    from src.storage import save_questions_separate_file
-                    
-                    # إضافة النص المصدر للبيانات
-                    questions_data = st.session_state.rag_questions.copy()
-                    questions_data["source_text"] = raw_text
-                    questions_data["lang"] = lang
-                    
-                    filename, total_questions = save_questions_separate_file(
-                        questions_data=questions_data,
-                        model_name=model_name,
-                        method="rag",
-                        source_file=up.name,
-                        lang=lang
-                    )
-                    
-                    st.success(f"تم حفظ {total_questions} سؤال بنجاح!")
-                    st.info(f"الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
-                    
-                except Exception as e:
-                    st.error(f"خطأ في حفظ الأسئلة: {e}")
+                st.markdown(
+                    f"**المصدر {i}:** `{source.get('filename', '—')}` — "
+                    f"تشابه {source.get('score', 0):.3f}\n\n"
+                    f"{source.get('text', '')[:200]}..."
+                )
+
+    display_questions_with_answers(st.session_state.rag_questions)
