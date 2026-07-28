@@ -14,7 +14,7 @@ try:
     from src.loaders import load_text
     from src.chunking import chunk_text
     from src.arabic_text import clean_ar
-    from src.faiss_store import build_or_update, search, load_meta
+    from src.faiss_store import build_index, search, load_meta
     from src.rag import retrieve
     from src.generator import detect_lang, build_prompt_vanilla, build_prompt_rag, call_llama, safe_json, generate_questions_with_retry
     from src.storage import save_group
@@ -517,7 +517,7 @@ with col2:
                             {"id": i + 10_000_000, "text": ch, "metadata": {"source": up.name}} 
                             for i, ch in enumerate(chunks)
                         ]
-                        build_or_update("indexes/upload.index", "indexes/upload_meta.jsonl", tmp_records)
+                        build_index("indexes/upload.index", "indexes/upload_meta.jsonl", tmp_records)
 
                         # استرجاع المقاطع المشابهة (is_query=True للبحث)
                         st.info("**جاري البحث عن مصادر مشابهة...**")
