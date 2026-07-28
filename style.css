@@ -1,3 +1,27 @@
+header[data-testid="stHeader"] {
+    display: none;
+}
+
+[data-testid="stToolbar"] {
+    display: none;
+}
+
+[data-testid="stDecoration"] {
+    display: none;
+}
+
+.stDeployButton {
+    display: none !important;
+}
+
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}
+
 /* CSS شامل لجميع الصفحات - وضع الشريط الجانبي على اليمين */
 .stApp {
     direction: rtl;
@@ -47,6 +71,10 @@
 .stFileUploader label {
     direction: rtl;
     text-align: right;
+}
+
+[data-testid="stFileUploader"] small {
+    display: none !important;
 }
 
 .stRadio > div {

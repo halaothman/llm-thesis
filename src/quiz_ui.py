@@ -20,7 +20,7 @@ def render_quiz(questions: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
         Dict[str, str]: قاموس يحتوي على إجابات المستخدم
     """
     if not questions or not isinstance(questions, dict):
-        st.error("❌ لا توجد أسئلة لعرضها")
+        st.error("لا توجد أسئلة لعرضها")
         return {}
     
     # إضافة CSS مخصص للمحاذاة
@@ -41,7 +41,7 @@ def render_quiz(questions: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
     
     # عرض أسئلة الاختيار من متعدد
     if "mcq" in questions and questions["mcq"]:
-        st.markdown("<div dir='rtl' style='text-align: right;'><h3>📝 أسئلة الاختيار من متعدد</h3></div>", unsafe_allow_html=True)
+        st.markdown("<div dir='rtl' style='text-align: right;'><h3> أسئلة الاختيار من متعدد</h3></div>", unsafe_allow_html=True)
         
         for i, mcq in enumerate(questions["mcq"]):
             if not isinstance(mcq, dict):
@@ -59,7 +59,7 @@ def render_quiz(questions: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
             # عرض الخيارات
             options = mcq.get("options", [])
             if len(options) != 4:
-                st.warning(f"⚠️ السؤال {i+1} يجب أن يحتوي على 4 خيارات (موجود {len(options)})")
+                st.warning(f"السؤال {i+1} يجب أن يحتوي على 4 خيارات (موجود {len(options)})")
                 continue
             
             # خيارات الراديو
@@ -71,7 +71,7 @@ def render_quiz(questions: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
                 options=options,
                 key=question_key,
                 index=None,
-                format_func=lambda x: f"○ {x}"  # رمز دائرة بدون HTML
+                format_func=lambda x: f" {x}"  # رمز دائرة بدون HTML
             )
             
             if answer:
@@ -81,7 +81,7 @@ def render_quiz(questions: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
     
     # عرض أسئلة صح/خطأ
     if "tf" in questions and questions["tf"]:
-        st.markdown("<div dir='rtl' style='text-align: right;'><h3>✅ أسئلة صح/خطأ</h3></div>", unsafe_allow_html=True)
+        st.markdown("<div dir='rtl' style='text-align: right;'><h3> أسئلة صح/خطأ</h3></div>", unsafe_allow_html=True)
         
         for i, tf in enumerate(questions["tf"]):
             if not isinstance(tf, dict):
@@ -104,7 +104,7 @@ def render_quiz(questions: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
                 options=tf_options,
                 key=question_key,
                 index=None,
-                format_func=lambda x: f"○ {x}"  # رمز دائرة بدون HTML
+                format_func=lambda x: f" {x}"  # رمز دائرة بدون HTML
             )
             
             if answer:
@@ -128,7 +128,7 @@ def grade(user_answers: Dict[str, str], questions: Dict[str, Any], prefix: str =
         Tuple[int, int, List[str]]: (الدرجة، المجموع، تفاصيل التصحيح)
     """
     if not user_answers or not questions:
-        return 0, 0, ["❌ لا توجد إجابات أو أسئلة للتصحيح"]
+        return 0, 0, [" لا توجد إجابات أو أسئلة للتصحيح"]
     
     score = 0
     total = 0
@@ -149,9 +149,9 @@ def grade(user_answers: Dict[str, str], questions: Dict[str, Any], prefix: str =
             
             if user_answer == correct_answer:
                 score += 1
-                results.append(f"✅ السؤال {i+1} (MCQ): صحيح - {user_answer}")
+                results.append(f" السؤال {i+1} (MCQ): صحيح - {user_answer}")
             else:
-                results.append(f"❌ السؤال {i+1} (MCQ): خطأ - إجابتك: {user_answer}, الصحيح: {correct_answer}")
+                results.append(f" السؤال {i+1} (MCQ): خطأ - إجابتك: {user_answer}, الصحيح: {correct_answer}")
     
     # تصحيح أسئلة صح/خطأ
     if "tf" in questions and questions["tf"]:
@@ -174,9 +174,9 @@ def grade(user_answers: Dict[str, str], questions: Dict[str, Any], prefix: str =
             
             if user_answer == correct_answer:
                 score += 1
-                results.append(f"✅ السؤال {i+1} (T/F): صحيح - {user_answer}")
+                results.append(f" السؤال {i+1} (T/F): صحيح - {user_answer}")
             else:
-                results.append(f"❌ السؤال {i+1} (T/F): خطأ - إجابتك: {user_answer}, الصحيح: {correct_answer}")
+                results.append(f" السؤال {i+1} (T/F): خطأ - إجابتك: {user_answer}, الصحيح: {correct_answer}")
     
     return score, total, results
 
@@ -191,7 +191,7 @@ def display_quiz_results(score: int, total: int, results: List[str]):
         results: تفاصيل التصحيح
     """
     if total == 0:
-        st.error("❌ لا توجد أسئلة للتصحيح")
+        st.error("لا توجد أسئلة للتصحيح")
         return
     
     # حساب النسبة المئوية
@@ -199,18 +199,18 @@ def display_quiz_results(score: int, total: int, results: List[str]):
     
     # عرض النتيجة الرئيسية
     if percentage >= 90:
-        st.success(f"🎉 ممتاز! نتيجتك: {score}/{total} ({percentage:.1f}%)")
+        st.success(f"ممتاز! نتيجتك: {score}/{total} ({percentage:.1f}%)")
     elif percentage >= 80:
-        st.success(f"👏 جيد جداً! نتيجتك: {score}/{total} ({percentage:.1f}%)")
+        st.success(f"جيد جداً! نتيجتك: {score}/{total} ({percentage:.1f}%)")
     elif percentage >= 70:
-        st.info(f"👍 جيد! نتيجتك: {score}/{total} ({percentage:.1f}%)")
+        st.info(f"جيد! نتيجتك: {score}/{total} ({percentage:.1f}%)")
     elif percentage >= 60:
-        st.warning(f"⚠️ مقبول! نتيجتك: {score}/{total} ({percentage:.1f}%)")
+        st.warning(f"مقبول! نتيجتك: {score}/{total} ({percentage:.1f}%)")
     else:
-        st.error(f"❌ ضعيف! نتيجتك: {score}/{total} ({percentage:.1f}%)")
+        st.error(f"ضعيف! نتيجتك: {score}/{total} ({percentage:.1f}%)")
     
     # عرض تفاصيل التصحيح
-    with st.expander("📋 تفاصيل التصحيح"):
+    with st.expander("تفاصيل التصحيح"):
         for result in results:
             st.write(result)
     
@@ -252,22 +252,22 @@ def validate_questions_format(questions: Dict[str, Any]) -> bool:
             # دعم التنسيقين: "question" أو "q"
             question_field = mcq.get("question") or mcq.get("q")
             if not question_field:
-                st.warning(f"⚠️ السؤال MCQ {i+1} يفتقر إلى حقل السؤال")
+                st.warning(f"السؤال MCQ {i+1} يفتقر إلى حقل السؤال")
                 return False
             
             # التحقق من وجود options
             if "options" not in mcq:
-                st.warning(f"⚠️ السؤال MCQ {i+1} يفتقر إلى حقل الخيارات")
+                st.warning(f"السؤال MCQ {i+1} يفتقر إلى حقل الخيارات")
                 return False
             
             # التحقق من وجود الإجابة الصحيحة (دعم التنسيقين)
             if "correct_answer" not in mcq and "answer" not in mcq:
-                st.warning(f"⚠️ السؤال MCQ {i+1} يفتقر إلى الإجابة الصحيحة")
+                st.warning(f"السؤال MCQ {i+1} يفتقر إلى الإجابة الصحيحة")
                 return False
             
             # التحقق من وجود 4 خيارات
             if len(mcq.get("options", [])) != 4:
-                st.warning(f"⚠️ السؤال MCQ {i+1} يجب أن يحتوي على 4 خيارات")
+                st.warning(f"السؤال MCQ {i+1} يجب أن يحتوي على 4 خيارات")
                 return False
     
     # التحقق من وجود أسئلة True/False
@@ -282,12 +282,12 @@ def validate_questions_format(questions: Dict[str, Any]) -> bool:
             # دعم التنسيقين: "question" أو "q"
             question_field = tf.get("question") or tf.get("q")
             if not question_field:
-                st.warning(f"⚠️ السؤال T/F {i+1} يفتقر إلى حقل السؤال")
+                st.warning(f"السؤال T/F {i+1} يفتقر إلى حقل السؤال")
                 return False
             
             # التحقق من وجود الإجابة الصحيحة (دعم التنسيقين)
             if "correct_answer" not in tf and "answer" not in tf:
-                st.warning(f"⚠️ السؤال T/F {i+1} يفتقر إلى الإجابة الصحيحة")
+                st.warning(f"السؤال T/F {i+1} يفتقر إلى الإجابة الصحيحة")
                 return False
             
             # التحقق من أن الإجابة الصحيحة صحيحة (دعم التنسيقين)
@@ -296,7 +296,7 @@ def validate_questions_format(questions: Dict[str, Any]) -> bool:
                 # إذا كانت boolean، فهي صحيحة
                 pass
             elif correct_answer not in ["صح", "خطأ", "true", "false", True, False]:
-                st.warning(f"⚠️ السؤال T/F {i+1} يجب أن تكون الإجابة الصحيحة 'صح' أو 'خطأ' أو boolean")
+                st.warning(f"السؤال T/F {i+1} يجب أن تكون الإجابة الصحيحة 'صح' أو 'خطأ' أو boolean")
                 return False
     
     return True
@@ -326,7 +326,7 @@ def add_missing_correct_answers(questions: Dict[str, Any]) -> Dict[str, Any]:
                 options = mcq.get("options", [])
                 if options:
                     updated_questions["mcq"][i]["correct_answer"] = options[0]
-                    st.info(f"ℹ️ تم إضافة إجابة صحيحة للسؤال MCQ {i+1}: {options[0]}")
+                    st.info(f"تم إضافة إجابة صحيحة للسؤال MCQ {i+1}: {options[0]}")
     
     # إضافة الإجابات الصحيحة لأسئلة True/False
     if "tf" in updated_questions:
@@ -334,7 +334,7 @@ def add_missing_correct_answers(questions: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(tf, dict) and "correct_answer" not in tf and "answer" not in tf:
                 # اختيار "صح" كإجابة افتراضية (يمكن تحسين هذا لاحقاً)
                 updated_questions["tf"][i]["correct_answer"] = "صح"
-                st.info(f"ℹ️ تم إضافة إجابة صحيحة للسؤال T/F {i+1}: صح")
+                st.info(f"تم إضافة إجابة صحيحة للسؤال T/F {i+1}: صح")
     
     return updated_questions
 

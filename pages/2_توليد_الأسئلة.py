@@ -1,7 +1,6 @@
-"""صفحة توليد الأسئلة: Vanilla و RAG وأسئلة رياضية، مع حفظ JSON وعرض الاختبار."""
+"""صفحة توليد الأسئلة: Vanilla و RAG، مع حفظ JSON وعرض الاختبار."""
 import streamlit as st
 import os
-import json
 import time
 import sys
 import numpy as np
@@ -17,7 +16,7 @@ try:
     from src.arabic_text import clean_ar
     from src.faiss_store import build_or_update, search, load_meta
     from src.rag import retrieve
-    from src.generator import detect_lang, build_prompt_vanilla, build_prompt_rag, build_prompt_math, MATH_MODEL, call_llama, safe_json, generate_questions_with_retry, generate_math_questions
+    from src.generator import detect_lang, build_prompt_vanilla, build_prompt_rag, call_llama, safe_json, generate_questions_with_retry
     from src.storage import save_group
     from src.embeddings import embed_texts, get_model_name, get_model_info
     from src.config import get_rag_version, set_rag_version, get_index_paths
@@ -116,18 +115,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("❓ توليد الأسئلة (Vanilla & RAG)")
+st.title("توليد الأسئلة (Vanilla & RAG)")
 
 # اختيار النموذج في بداية الصفحة
-st.subheader("🤖 اختر النموذج")
+st.subheader("اختر النموذج")
 col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("🦙 LLaMA 3.2:3B", use_container_width=True, type="primary"):
+    if st.button("LLaMA 3.2:3B", use_container_width=True, type="primary"):
         st.session_state.selected_model = "llama3.2:3b"
 
 with col2:
-    if st.button("🧠 Qwen 2.5:7B", use_container_width=True, type="primary"):
+    if st.button("Qwen 2.5:7B", use_container_width=True, type="primary"):
         st.session_state.selected_model = "qwen2.5:7b"
 
 if 'selected_model' in st.session_state:
@@ -183,10 +182,10 @@ EMBEDDING_MODEL = settings["EMBEDDING_MODEL"]
 
 # الشريط الجانبي - إعدادات النظام
 with st.sidebar:
-    st.header("⚙️ إعدادات النظام")
+    st.header("إعدادات النظام")
     
     # حالة Ollama
-    st.subheader("🤖 حالة Ollama")
+    st.subheader("حالة Ollama")
     try:
         import ollama
         models = ollama.list()
@@ -199,7 +198,7 @@ with st.sidebar:
                     if hasattr(model, 'model'):
                         installed_models.append(model.model)
                     else:
-                        st.warning(f"⚠️ نموذج غير صالح: {model}")
+                        st.warning(f"نموذج غير صالح: {model}")
         elif models and isinstance(models, list):
             # في حالة كانت الاستجابة قائمة مباشرة
             installed_models = []
@@ -209,52 +208,52 @@ with st.sidebar:
                 elif isinstance(model, dict) and "model" in model:
                     installed_models.append(model["model"])
                 else:
-                    st.warning(f"⚠️ نموذج غير صالح: {model}")
+                    st.warning(f"نموذج غير صالح: {model}")
             
             if installed_models:
-                st.success("✅ Ollama يعمل")
-                st.write(f"📋 النماذج المثبتة: {len(installed_models)}")
+                st.success("Ollama يعمل")
+                st.write(f"النماذج المثبتة: {len(installed_models)}")
                 
                 # عرض النماذج المثبتة
                 for model in installed_models:
                     if "llama3.2:3b" in model:
-                        st.write(f"  • {model} ✅")
+                        st.write(f"• {model} ")
                     elif "qwen" in model.lower():
-                        st.write(f"  • {model} ✅")
+                        st.write(f"• {model} ")
                     else:
-                        st.write(f"  • {model}")
+                        st.write(f"• {model}")
                 
                 # عرض النماذج المدعومة غير المثبتة
                 supported_models = ["llama3.2:3b", "qwen2.5:7b"]
                 missing_models = [model for model in supported_models if not any(model in installed for installed in installed_models)]
                 if missing_models:
-                    st.write("📋 النماذج المدعومة غير المثبتة:")
+                    st.write("النماذج المدعومة غير المثبتة:")
                     for model in missing_models:
-                        st.write(f"  • {model} ⚠️")
+                        st.write(f"• {model} ")
                     
                     # زر تثبيت النماذج
-                    if st.button("📥 تثبيت النماذج المفقودة", key="install_models"):
-                        st.info("💡 لتثبيت النماذج، استخدم الأوامر التالية في Terminal:")
+                    if st.button("تثبيت النماذج المفقودة", key="install_models"):
+                        st.info("لتثبيت النماذج، استخدم الأوامر التالية في Terminal:")
                         for model in missing_models:
                             st.code(f"ollama pull {model}", language="bash")
             else:
-                st.warning("⚠️ لا توجد نماذج مثبتة")
-                st.info("💡 لتثبيت نماذج، استخدم: `ollama pull llama3.2:3b`")
+                st.warning("لا توجد نماذج مثبتة")
+                st.info("لتثبيت نماذج، استخدم: `ollama pull llama3.2:3b`")
         else:
-            st.error("❌ استجابة غير صحيحة من Ollama")
-            st.write(f"📄 الاستجابة: {models}")
+            st.error("استجابة غير صحيحة من Ollama")
+            st.write(f"الاستجابة: {models}")
     except Exception as e:
-        st.error(f"❌ خطأ في الاتصال بـ Ollama: {e}")
-        st.write("🔧 تأكد من أن Ollama يعمل: `ollama serve`")
+        st.error(f"خطأ في الاتصال بـ Ollama: {e}")
+        st.write("تأكد من أن Ollama يعمل: `ollama serve`")
     
     st.markdown("---")
     
     # اختيار النسخة (Baseline vs Improved)
-    st.subheader("🔄 نسخة RAG")
+    st.subheader("نسخة RAG")
     current_version = get_rag_version()
     version_options = {
-        "baseline": "📊 Baseline (الأصلية)",
-        "improved": "✨ Improved (المحسّنة)"
+        "baseline": " Baseline (الأصلية)",
+        "improved": " Improved (المحسّنة)"
     }
     selected_version = st.radio(
         "اختر النسخة:",
@@ -312,7 +311,7 @@ with st.sidebar:
     st.markdown("---")
     
     # إعدادات التضمين (تحديث تلقائي بناءً على النسخة)
-    st.subheader("🧠 نظام التضمين")
+    st.subheader("نظام التضمين")
     model_name = get_model_name()
     model_info = get_model_info()
     st.metric("النموذج", model_name)
@@ -327,7 +326,7 @@ with st.sidebar:
     st.markdown("---")
     
     # إعدادات التوليد
-    st.subheader("🎯 إعدادات التوليد")
+    st.subheader("إعدادات التوليد")
     st.metric("درجة الحرارة", TEMPERATURE)
     st.metric("عدد المحاولات", MAX_RETRIES)
     st.metric("عدد الأسئلة", "10 (5 MCQ + 5 TF)")
@@ -337,25 +336,25 @@ with st.sidebar:
         model_name = st.session_state.selected_model
         st.metric("النموذج المختار", model_name)
         if "llama3.2:3b" in model_name:
-            st.success("✅ LLaMA 3.2:3B")
+            st.success("LLaMA 3.2:3B")
         elif "qwen" in model_name.lower():
-            st.success("✅ Qwen 2.5:7B")
+            st.success("Qwen 2.5:7B")
         else:
-            st.info(f"ℹ️ {model_name}")
+            st.info(f"{model_name}")
     else:
         st.info("لم يُختر نموذج بعد")
 
 # رفع الملف
-st.subheader("📁 رفع الملف")
+st.subheader("رفع الملف")
 
-# التحقق من اختيار النموذج (مطلوب لـ Vanilla و RAG فقط)
+# التحقق من اختيار النموذج (مطلوب لـ Vanilla و RAG)
 if 'selected_model' not in st.session_state:
-    st.warning("اختر نموذجاً من الأعلى (Vanilla و RAG). الأسئلة الحسابية لا تحتاج هذا الاختيار.")
+    st.warning("اختر نموذجاً من الأعلى (Vanilla و RAG).")
 
 up = st.file_uploader("ارفع PDF / DOCX / TXT / MD", type=["pdf","docx","doc","txt","md"])
 
 if not up:
-    st.info("ارفع ملفاً لإظهار أزرار التوليد: Vanilla / RAG / أسئلة حسابية")
+    st.info("ارفع ملفاً لإظهار أزرار التوليد: Vanilla / RAG")
     st.stop()
 
 # حفظ الملف مؤقتاً
@@ -389,49 +388,39 @@ try:
                         installed_models.append(model.model)
         
         if model_name in installed_models:
-            st.success(f"✅ النموذج {model_name} مثبت ومتاح")
+            st.success(f"النموذج {model_name} مثبت ومتاح")
         elif model_name:
-            st.warning(f"⚠️ النموذج {model_name} غير مثبت. سيتم محاولة تحميله عند الاستخدام.")
-            st.info(f"💡 يمكنك تثبيت النموذج باستخدام: `ollama pull {model_name}`")
+            st.warning(f"النموذج {model_name} غير مثبت. سيتم محاولة تحميله عند الاستخدام.")
+            st.info(f"يمكنك تثبيت النموذج باستخدام: `ollama pull {model_name}`")
         else:
-            st.info("ℹ️ لم يُختر نموذج Vanilla/RAG — يمكنك استخدام الأسئلة الحسابية مباشرة")
+            st.info("لم يُختر نموذج — اختر LLaMA أو Qwen من الأعلى لتوليد Vanilla/RAG")
     except Exception as e:
-        st.error(f"❌ خطأ في التحقق من حالة النماذج: {e}")
+        st.error(f"خطأ في التحقق من حالة النماذج: {e}")
     
     # عرض معلومات الملف
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📄 اسم الملف", up.name)
+        st.metric("اسم الملف", up.name)
     with col2:
-        st.metric("🌐 اللغة المكتشفة", "العربية" if lang == "ar" else "English")
+        st.metric("اللغة المكتشفة", "العربية" if lang == "ar" else "English")
     with col3:
-        st.metric("📏 طول النص", f"{text_length:,} حرف")
+        st.metric("طول النص", f"{text_length:,} حرف")
     with col4:
-        st.metric("🤖 النموذج المختار", model_name or "—")
-    
-    # معاينة النص
-    with st.expander("👁️ معاينة النص"):
-        preview = raw_text[:1000] + "..." if len(raw_text) > 1000 else raw_text
-        st.text_area("محتوى الملف:", preview, height=200, disabled=True)
+        st.metric("النموذج المختار", model_name or "—")
 
 except Exception as e:
     st.error(f"خطأ في قراءة الملف: {e}")
     st.stop()
 
-# الحفظ التلقائي في ملف منفصل
-st.subheader("💾 حفظ الأسئلة")
-st.info("📁 سيتم حفظ الأسئلة تلقائياً في ملف منفصل: `questions_{نموذج}_{طريقة}_{ملف_مرفوع}.json`")
-
-
 # أزرار التوليد
-st.subheader("🚀 اختر طريقة التوليد")
-col1, col2, col3 = st.columns(3)
+st.subheader("اختر طريقة التوليد")
+col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("#### ✨ توليد Vanilla (بدون RAG)")
+    st.markdown("#### توليد Vanilla (بدون RAG)")
     st.caption("توليد الأسئلة من النص المرفوع فقط")
     
-    if st.button("🚀 توليد أسئلة Vanilla", type="primary", use_container_width=True):
+    if st.button("توليد أسئلة Vanilla", type="primary", use_container_width=True):
         if not model_name:
             st.error("اختر نموذج LLaMA أو Qwen من الأعلى أولاً")
         else:
@@ -444,9 +433,9 @@ with col1:
                         if hasattr(model, 'model'):
                             installed_models.append(model.model)
                 if model_name not in installed_models:
-                    st.info(f"⏳ النموذج {model_name} غير موجود. سيتم تحميله تلقائياً...")
+                    st.info(f"النموذج {model_name} غير موجود. سيتم تحميله تلقائياً...")
             except Exception as e:
-                st.warning(f"⚠️ تعذر التحقق من حالة النموذج: {e}")
+                st.warning(f"تعذر التحقق من حالة النموذج: {e}")
 
             with st.spinner("جاري توليد الأسئلة..."):
                 try:
@@ -456,15 +445,15 @@ with col1:
                     generation_time = time.time() - start_time
                     out = safe_json(response, raw_text, model_name, lang, None)
                     if out is None:
-                        st.error("❌ فشل في تحليل JSON، سيتم إعادة المحاولة")
+                        st.error("فشل في تحليل JSON، سيتم إعادة المحاولة")
                         out = generate_questions_with_retry(
                             prompt, max_retries=2, source_text=raw_text,
                             model_name=model_name, lang=lang, retrieved=None,
                         )
                         if out is None:
-                            st.error("❌ فشل في توليد الأسئلة بعد جميع المحاولات")
+                            st.error("فشل في توليد الأسئلة بعد جميع المحاولات")
                             st.stop()
-                        st.success("✅ تم توليد الأسئلة بنجاح بعد إعادة المحاولة")
+                        st.success("تم توليد الأسئلة بنجاح بعد إعادة المحاولة")
                     if out is None or not isinstance(out, dict) or "mcq" not in out or "tf" not in out:
                         st.error("خطأ في تنسيق الأسئلة المولدة")
                         st.code(response)
@@ -477,30 +466,30 @@ with col1:
                             filename, num_questions = save_questions_separate_file(
                                 out, model_name, "vanilla", up.name, lang,
                             )
-                            st.success(f"✅ تم حفظ {num_questions} سؤال في: `{filename}`")
+                            st.success(f"تم حفظ {num_questions} سؤال في: `{filename}`")
                         except Exception as e:
-                            st.error(f"❌ خطأ في حفظ الملف المنفصل: {e}")
+                            st.error(f"خطأ في حفظ الملف المنفصل: {e}")
                             save_group("A", {
                                 "lang": lang, **out, "source_file": up.name,
                                 "generation_time": generation_time, "method": "vanilla",
                             })
-                    st.success(f"✅ تم توليد {len(out.get('mcq', []))} MCQ و {len(out.get('tf', []))} صح/خطأ")
-                    st.info(f"⏱️ وقت التوليد: {generation_time:.2f} ثانية")
+                    st.success(f"تم توليد {len(out.get('mcq', []))} MCQ و {len(out.get('tf', []))} صح/خطأ")
+                    st.info(f"وقت التوليد: {generation_time:.2f} ثانية")
                     st.session_state.vanilla_questions = out
                     st.session_state.vanilla_generated = True
                 except Exception as e:
                     st.error(f"خطأ في توليد الأسئلة: {e}")
 
 with col2:
-    st.markdown("#### 🧠 توليد RAG (مع الاسترجاع)")
+    st.markdown("#### توليد RAG (مع الاسترجاع)")
     st.caption("توليد الأسئلة مع الاسترجاع من المصادر الخارجية")
     
     # التحقق من وجود الفهرس
     if not os.path.exists(IDX_PATH):
-        st.warning("⚠️ لم يتم إنشاء فهرس المصادر الخارجية بعد")
+        st.warning("لم يتم إنشاء فهرس المصادر الخارجية بعد")
         st.info("يرجى الذهاب إلى صفحة 'فهرسة المراجع' أولاً")
     else:
-        if st.button("🚀 توليد أسئلة RAG", type="primary", use_container_width=True):
+        if st.button("توليد أسئلة RAG", type="primary", use_container_width=True):
             if not model_name:
                 st.error("اختر نموذج LLaMA أو Qwen من الأعلى أولاً")
             else:
@@ -516,9 +505,9 @@ with col2:
                                     installed_models.append(model.model)
                     
                     if model_name not in installed_models:
-                        st.info(f"⏳ النموذج {model_name} غير موجود. سيتم تحميله تلقائياً...")
+                        st.info(f"النموذج {model_name} غير موجود. سيتم تحميله تلقائياً...")
                 except Exception as e:
-                    st.warning(f"⚠️ تعذر التحقق من حالة النموذج: {e}")
+                    st.warning(f"تعذر التحقق من حالة النموذج: {e}")
                 
                 with st.spinner("جاري توليد الأسئلة مع RAG..."):
                     try:
@@ -531,13 +520,13 @@ with col2:
                         build_or_update("indexes/upload.index", "indexes/upload_meta.jsonl", tmp_records)
 
                         # استرجاع المقاطع المشابهة (is_query=True للبحث)
-                        st.info("🔍 **جاري البحث عن مصادر مشابهة...**")
+                        st.info("**جاري البحث عن مصادر مشابهة...**")
                         qv = embed_texts([clean_ar(raw_text)], is_query=True)
                         D, I = search(IDX_PATH, qv, TOP_K)
                         meta = load_meta(META_PATH)
                     
                         # عرض معلومات التشخيص
-                        st.info(f"🔍 **معلومات التشخيص:**")
+                        st.info(f"**معلومات التشخيص:**")
                         st.write(f"- عدد النتائج المسترجعة من الفهرس: {len(D) if len(D) > 0 else 0}")
                         st.write(f"- درجات التشابه: {D.tolist() if len(D) > 0 else 'لا توجد نتائج'}")
                         st.write(f"- معرفات النتائج: {I.tolist() if len(I) > 0 else 'لا توجد نتائج'}")
@@ -561,20 +550,20 @@ with col2:
                                             "score": sc,
                                             "source_path": m.get("metadata", {}).get("source", "")
                                         })
-                                        st.success(f"✅ تم قبول المقطع {i} (درجة: {sc:.3f})")
+                                        st.success(f"تم قبول المقطع {i} (درجة: {sc:.3f})")
                                     else:
-                                        st.warning(f"❌ تم رفض المقطع {i} (درجة: {sc:.3f} < {SIMILARITY_THRESHOLD})")
+                                        st.warning(f"تم رفض المقطع {i} (درجة: {sc:.3f} < {SIMILARITY_THRESHOLD})")
                                 except (ValueError, TypeError) as e:
                                     st.error(f"خطأ في معالجة المقطع {i}: {e}")
                                     continue
 
-                        st.info(f"📊 **النتيجة النهائية:** {len(retrieved)} مقطع مقبول من أصل {len(D)}")
+                        st.info(f"**النتيجة النهائية:** {len(retrieved)} مقطع مقبول من أصل {len(D)}")
                     
                         # التحقق من وجود مقاطع مسترجعة قبل المتابعة
                         if not retrieved:
-                            st.error("❌ **تعذر العثور على مصادر مشابهة**")
+                            st.error("**تعذر العثور على مصادر مشابهة**")
                             st.warning(f"""
-    ⚠️ **لم يتم العثور على مقاطع مشابهة بدرجة كافية**
+     **لم يتم العثور على مقاطع مشابهة بدرجة كافية**
 
     **التفاصيل:**
     - عدد النتائج المسترجعة من الفهرس: {len(D) if len(D) > 0 else 0}
@@ -591,7 +580,7 @@ with col2:
                             """)
                             st.stop()  # إيقاف العملية تماماً
                     
-                        st.success(f"✅ تم العثور على {len(retrieved)} مقطع مشابه - جاري المتابعة...")
+                        st.success(f"تم العثور على {len(retrieved)} مقطع مشابه - جاري المتابعة...")
 
                         # بناء الـ prompt مع RAG
                         prompt = build_prompt_rag(raw_text, lang, retrieved)
@@ -602,27 +591,27 @@ with col2:
                         generation_time = time.time() - start_time
                     
                         # عرض الرد الخام للتشخيص
-                        st.info("🔍 **الرد الخام من النموذج:**")
-                        with st.expander("📄 عرض الرد الكامل"):
+                        st.info("**الرد الخام من النموذج:**")
+                        with st.expander("عرض الرد الكامل"):
                             st.code(response, language="text")
                     
                         # تحليل الاستجابة مع تمرير raw_text للإصلاح التلقائي
-                        st.info("🔍 **تحليل الاستجابة:**")
+                        st.info("**تحليل الاستجابة:**")
                         out = safe_json(response, raw_text, model_name, lang, retrieved)
                     
                         if out is None:
-                            st.error("❌ فشل في تحليل JSON، سيتم إعادة المحاولة")
+                            st.error("فشل في تحليل JSON، سيتم إعادة المحاولة")
                             # إعادة المحاولة مع النموذج
                             out = generate_questions_with_retry(prompt, max_retries=2, source_text=raw_text, 
                                                                  model_name=model_name, lang=lang, retrieved=retrieved)
                         
                             if out is None:
-                                st.error("❌ فشل في توليد الأسئلة بعد جميع المحاولات")
+                                st.error("فشل في توليد الأسئلة بعد جميع المحاولات")
                                 st.stop()
                             else:
-                                st.success("✅ تم توليد الأسئلة بنجاح بعد إعادة المحاولة")
+                                st.success("تم توليد الأسئلة بنجاح بعد إعادة المحاولة")
                         else:
-                            st.success("✅ تم تحليل JSON بنجاح")
+                            st.success("تم تحليل JSON بنجاح")
                     
                         # التحقق من صحة البيانات
                         if out is None or not isinstance(out, dict) or "mcq" not in out or "tf" not in out:
@@ -639,7 +628,7 @@ with col2:
                         with st.spinner("جاري حساب المقاييس وحفظ الملف..."):
                             try:
                                 # التحقق من أن model_name صحيح
-                                st.info(f"🔍 **معلومات الحفظ:**")
+                                st.info(f"**معلومات الحفظ:**")
                                 st.write(f"- النموذج: {model_name}")
                                 st.write(f"- الطريقة: rag")
                                 st.write(f"- الملف المصدر: {up.name}")
@@ -652,10 +641,10 @@ with col2:
                                     up.name, 
                                     lang
                                 )
-                                st.success(f"✅ تم حفظ {num_questions} سؤال في: `{filename}`")
-                                st.info(f"📂 المسار الكامل: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
+                                st.success(f"تم حفظ {num_questions} سؤال في: `{filename}`")
+                                st.info(f"المسار الكامل: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
                             except Exception as e:
-                                st.error(f"❌ خطأ في حفظ الملف المنفصل: {e}")
+                                st.error(f"خطأ في حفظ الملف المنفصل: {e}")
                                 import traceback
                                 st.code(traceback.format_exc())
                                 st.info("جاري الحفظ في الملف الشامل...")
@@ -669,9 +658,9 @@ with col2:
                                     "retrieved_sources": len(retrieved)
                                 })
                     
-                        st.success(f"✅ تم توليد {len(out.get('mcq', []))} أسئلة اختيار من متعدد و {len(out.get('tf', []))} أسئلة صح/خطأ")
-                        st.info(f"⏱️ وقت التوليد: {generation_time:.2f} ثانية")
-                        st.info(f"📚 تم استرجاع {len(retrieved)} مقطع من المصادر الخارجية")
+                        st.success(f"تم توليد {len(out.get('mcq', []))} أسئلة اختيار من متعدد و {len(out.get('tf', []))} أسئلة صح/خطأ")
+                        st.info(f"وقت التوليد: {generation_time:.2f} ثانية")
+                        st.info(f"تم استرجاع {len(retrieved)} مقطع من المصادر الخارجية")
                     
                         # عرض الأسئلة
                         st.session_state.rag_questions = out
@@ -680,87 +669,13 @@ with col2:
                     except Exception as e:
                         st.error(f"خطأ في توليد الأسئلة: {e}")
 
-with col3:
-    st.markdown("#### 🔢 أسئلة حسابية")
-
-    if st.button("🔢 توليد أسئلة حسابية", type="primary", use_container_width=True):
-        with st.spinner("جاري توليد الأسئلة الحسابية..."):
-            try:
-                start_time = time.time()
-                out = generate_math_questions(raw_text, lang)
-                generation_time = time.time() - start_time
-
-                if out is None or not isinstance(out, dict) or "mcq" not in out:
-                    st.error("❌ فشل توليد الأسئلة الحسابية")
-                    st.stop()
-
-                if "tf" not in out or not isinstance(out.get("tf"), list):
-                    out["tf"] = []
-                if isinstance(out.get("mcq"), list):
-                    out["mcq"] = out["mcq"][:5]
-
-                out["source_text"] = raw_text
-                out["generation_time"] = generation_time
-                out["question_mode"] = "math"
-
-                with st.spinner("جاري حفظ الأسئلة..."):
-                    from src.storage import save_math_questions_file
-                    filename, num_questions = save_math_questions_file(out, up.name)
-                    st.success(f"✅ تم حفظ {num_questions} سؤال في: `{filename}`")
-
-                st.success(f"✅ تم توليد {len(out.get('mcq', []))} أسئلة حسابية (MCQ)")
-                st.info(f"⏱️ وقت التوليد: {generation_time:.2f} ثانية")
-
-                st.session_state.math_questions = out
-                st.session_state.math_generated = True
-
-            except Exception as e:
-                st.error(f"خطأ في توليد الأسئلة الحسابية: {e}")
-
 # عرض الأسئلة المولدة
-if hasattr(st.session_state, 'math_generated') and st.session_state.math_generated:
-    st.subheader("📝 الأسئلة المولدة (حسابية)")
-
-    if not validate_questions_format(st.session_state.math_questions):
-        st.warning("⚠️ تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
-        st.session_state.math_questions = add_missing_correct_answers(st.session_state.math_questions)
-
-    answers_math = render_quiz(st.session_state.math_questions, prefix="math_")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("✅ تصحيح الإجابات (رياضية)", key="grade_math"):
-            if answers_math:
-                score, total, results = grade(answers_math, st.session_state.math_questions, prefix="math_")
-                display_quiz_results(score, total, results)
-            else:
-                st.warning("⚠️ يرجى حل الأسئلة أولاً قبل التصحيح")
-
-    with col2:
-        if st.button("💾 حفظ الأسئلة (فقط)", key="save_math", type="primary"):
-            with st.spinner("جاري حفظ الأسئلة..."):
-                try:
-                    from src.storage import save_math_questions_file
-
-                    questions_data = st.session_state.math_questions.copy()
-                    filename, total_questions = save_math_questions_file(
-                        questions_data,
-                        source_file=up.name,
-                    )
-
-                    st.success(f"✅ تم حفظ {total_questions} سؤال بنجاح!")
-                    st.info(f"📁 الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
-
-                except Exception as e:
-                    st.error(f"❌ خطأ في حفظ الأسئلة: {e}")
-
 if hasattr(st.session_state, 'vanilla_generated') and st.session_state.vanilla_generated:
-    st.subheader("📝 الأسئلة المولدة (Vanilla)")
+    st.subheader("الأسئلة المولدة (Vanilla)")
     
     # التحقق من صحة تنسيق الأسئلة وإضافة الإجابات الصحيحة المفقودة
     if not validate_questions_format(st.session_state.vanilla_questions):
-        st.warning("⚠️ تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
+        st.warning("تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
         st.session_state.vanilla_questions = add_missing_correct_answers(st.session_state.vanilla_questions)
     
     # عرض الأسئلة كواجهة تفاعلية
@@ -770,15 +685,15 @@ if hasattr(st.session_state, 'vanilla_generated') and st.session_state.vanilla_g
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("✅ تصحيح الإجابات (Vanilla)", key="grade_vanilla"):
+        if st.button("تصحيح الإجابات (Vanilla)", key="grade_vanilla"):
             if answers_vanilla:
                 score, total, results = grade(answers_vanilla, st.session_state.vanilla_questions, prefix="vanilla_")
                 display_quiz_results(score, total, results)
             else:
-                st.warning("⚠️ يرجى حل الأسئلة أولاً قبل التصحيح")
+                st.warning("يرجى حل الأسئلة أولاً قبل التصحيح")
     
     with col2:
-        if st.button("💾 حفظ الأسئلة (فقط)", key="save_vanilla", type="primary"):
+        if st.button("حفظ الأسئلة (فقط)", key="save_vanilla", type="primary"):
             with st.spinner("جاري حفظ الأسئلة..."):
                 try:
                     from src.storage import save_questions_separate_file
@@ -796,29 +711,29 @@ if hasattr(st.session_state, 'vanilla_generated') and st.session_state.vanilla_g
                         lang=lang
                     )
                     
-                    st.success(f"✅ تم حفظ {total_questions} سؤال بنجاح!")
-                    st.info(f"📁 الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
+                    st.success(f"تم حفظ {total_questions} سؤال بنجاح!")
+                    st.info(f"الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
                     
                 except Exception as e:
-                    st.error(f"❌ خطأ في حفظ الأسئلة: {e}")
+                    st.error(f"خطأ في حفظ الأسئلة: {e}")
 
 if hasattr(st.session_state, 'rag_generated') and st.session_state.rag_generated:
-    st.subheader("📝 الأسئلة المولدة (RAG)")
+    st.subheader("الأسئلة المولدة (RAG)")
     
     # عرض المصادر المستخدمة
     if st.session_state.rag_questions.get("sources"):
-        with st.expander("📚 المصادر المستخدمة في التوليد"):
+        with st.expander("المصادر المستخدمة في التوليد"):
             for i, source in enumerate(st.session_state.rag_questions["sources"], 1):
                 st.markdown(f"""
                 **المصدر {i}:**
-                - 📄 الملف: `{source['filename']}`
-                - 🎯 درجة التشابه: {source['score']:.3f}
-                - 📝 النص: {source['text'][:200]}...
+                -  الملف: `{source['filename']}`
+                -  درجة التشابه: {source['score']:.3f}
+                -  النص: {source['text'][:200]}...
                 """)
     
     # التحقق من صحة تنسيق الأسئلة وإضافة الإجابات الصحيحة المفقودة
     if not validate_questions_format(st.session_state.rag_questions):
-        st.warning("⚠️ تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
+        st.warning("تنسيق الأسئلة غير صحيح، سيتم محاولة إصلاحه...")
         st.session_state.rag_questions = add_missing_correct_answers(st.session_state.rag_questions)
     
     # عرض الأسئلة كواجهة تفاعلية
@@ -828,15 +743,15 @@ if hasattr(st.session_state, 'rag_generated') and st.session_state.rag_generated
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("✅ تصحيح الإجابات (RAG)", key="grade_rag"):
+        if st.button("تصحيح الإجابات (RAG)", key="grade_rag"):
             if answers_rag:
                 score, total, results = grade(answers_rag, st.session_state.rag_questions, prefix="rag_")
                 display_quiz_results(score, total, results)
             else:
-                st.warning("⚠️ يرجى حل الأسئلة أولاً قبل التصحيح")
+                st.warning("يرجى حل الأسئلة أولاً قبل التصحيح")
     
     with col2:
-        if st.button("💾 حفظ الأسئلة (فقط)", key="save_rag", type="primary"):
+        if st.button("حفظ الأسئلة (فقط)", key="save_rag", type="primary"):
             with st.spinner("جاري حفظ الأسئلة..."):
                 try:
                     from src.storage import save_questions_separate_file
@@ -854,52 +769,8 @@ if hasattr(st.session_state, 'rag_generated') and st.session_state.rag_generated
                         lang=lang
                     )
                     
-                    st.success(f"✅ تم حفظ {total_questions} سؤال بنجاح!")
-                    st.info(f"📁 الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
+                    st.success(f"تم حفظ {total_questions} سؤال بنجاح!")
+                    st.info(f"الملف: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
                     
                 except Exception as e:
-                    st.error(f"❌ خطأ في حفظ الأسئلة: {e}")
-
-# قسم إدارة ملف JSON
-st.markdown("---")
-st.subheader("📄 إدارة ملف JSON")
-
-# عرض حالة الملف
-json_file_path = "questions.json"
-if os.path.exists(json_file_path):
-    file_size = os.path.getsize(json_file_path)
-    st.info(f"📁 ملف JSON موجود - الحجم: {file_size} بايت")
-    
-    # زر عرض محتويات الملف
-    if st.button("👁️ عرض محتويات ملف JSON", key="view_json"):
-        try:
-            with open(json_file_path, "r", encoding="utf-8") as f:
-                json_content = f.read()
-            
-            if json_content.strip():
-                st.subheader("📋 محتويات ملف JSON:")
-                st.json(json.loads(json_content))
-                
-                # إمكانية تحميل الملف
-                st.download_button(
-                    label="💾 تحميل ملف JSON",
-                    data=json_content,
-                    file_name="questions.json",
-                    mime="application/json"
-                )
-            else:
-                st.warning("⚠️ الملف فارغ")
-        except Exception as e:
-            st.error(f"❌ خطأ في قراءة الملف: {e}")
-    
-    # زر مسح محتوى الملف
-    if st.button("🗑️ مسح محتوى ملف JSON", key="clear_json"):
-        try:
-            with open(json_file_path, "w", encoding="utf-8") as f:
-                f.write("")
-            st.success("✅ تم مسح محتوى الملف بنجاح")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ خطأ في مسح الملف: {e}")
-else:
-    st.warning("⚠️ ملف JSON غير موجود")
+                    st.error(f"خطأ في حفظ الأسئلة: {e}")

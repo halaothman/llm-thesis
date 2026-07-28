@@ -86,13 +86,10 @@ def save_questions_separate_file(questions_data: Dict[str, Any], model_name: str
     # تحديد اسم النموذج المختصر
     model_short = (
         "llama" if "llama" in model_name.lower()
-        else "deepseek" if "deepseek" in model_name.lower()
         else "qwen"
     )
     if method.lower() == "vanilla":
         method_short = "vanilla"
-    elif method.lower() == "math":
-        method_short = "math"
     else:
         method_short = "rag"
     
@@ -254,82 +251,6 @@ def save_questions_separate_file(questions_data: Dict[str, Any], model_name: str
         print(f"❌ خطأ في حفظ الملف: {e}")
         raise
 
-
-
-def _normalize_math_mcq(mcq_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """توحيد حقول أسئلة MCQ الرياضية قبل الحفظ."""
-    normalized = []
-    for i, mcq in enumerate(mcq_list[:5]):
-        if not isinstance(mcq, dict):
-            continue
-        question = mcq.get("q", mcq.get("question", "")).strip()
-        if not question:
-            continue
-        q_type = mcq.get("type") or ("computational" if i < 3 else "analytical")
-        normalized.append({
-            "q": question,
-            "options": mcq.get("options", []),
-            "answer": mcq.get("answer", ""),
-            "solution": mcq.get("solution", ""),
-            "type": q_type,
-            "difficulty": mcq.get("difficulty", "hard"),
-        })
-    return normalized
-
-
-def save_math_questions_file(questions_data: Dict[str, Any], source_file: str) -> tuple:
-    """
-    حفظ الأسئلة الرياضية بقالب JSON المخصص (metadata + questions.mcq + pipeline_meta).
-    """
-    from .generator import MATH_PROMPT_SET
-
-    os.makedirs("outputs", exist_ok=True)
-    clean_source = Path(source_file).stem.replace(" ", "_").replace(".", "_")
-    source_folder_path = os.path.join("outputs", clean_source)
-    os.makedirs(source_folder_path, exist_ok=True)
-
-    mcq = _normalize_math_mcq(questions_data.get("mcq", []))
-    if not mcq:
-        raise ValueError("لا توجد أسئلة رياضية للحفظ")
-
-    total = len(mcq)
-    generated_at = datetime.now().isoformat()
-    json_source_name = f"{Path(source_file).stem}.json"
-
-    data = {
-        "metadata": {
-            "source_file": source_file,
-            "generated_at": generated_at,
-            "total_questions": total,
-            "prompt_set": MATH_PROMPT_SET,
-        },
-        "questions": {
-            "mcq": mcq,
-            "pipeline_meta": {
-                "source_file": json_source_name,
-                "verified_count": total,
-                "stubs_generated": total,
-                "rejected_count": 0,
-            },
-            "metadata": {
-                "source_file": source_file,
-                "total_questions": total,
-                "prompt_set": MATH_PROMPT_SET,
-            },
-        },
-    }
-
-    filename = f"math_{clean_source}.json"
-    file_path = os.path.join(source_folder_path, filename)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-    if not os.path.exists(file_path):
-        raise IOError(f"فشل في حفظ الملف: {file_path}")
-
-    print(f"✅ تم حفظ {total} سؤال رياضي في: {file_path}")
-    return filename, total
 
 
 def load_questions_by_model_method(model_name: str, method: str, source_file: str = None):

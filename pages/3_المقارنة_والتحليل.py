@@ -11,7 +11,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from scipy.stats import mannwhitneyu, shapiro
 
-st.set_page_config(page_title="📊 المقارنة والتحليل", layout="wide")
+st.set_page_config(page_title="المقارنة والتحليل", layout="wide")
 
 try:
     with open("style.css", "r", encoding="utf-8") as f:
@@ -91,12 +91,18 @@ def parse_filename(path: Path):
     else:
         parts_clean = parts
 
-    # استخراج المعلومات من أجزاء الاسم
-    if len(parts_clean) >= 4 and parts_clean[0] == "questions":
+    # استخراج المعلومات من أجزاء الاسم: questions_{model}_{method}_{source...}
+    if len(parts_clean) >= 3 and parts_clean[0] == "questions":
         model = parts_clean[1]
         method = parts_clean[2]
-        # الباقي هو اسم المصدر
-        source = "_".join(parts_clean[3:])
+        if len(parts_clean) >= 4:
+            source = "_".join(parts_clean[3:])
+        else:
+            source = clean_source_name(stem)
+
+    if model not in MODEL_DISPLAY or method not in METHOD_DISPLAY:
+        model = "unknown"
+        method = "unknown"
 
     model_disp = MODEL_DISPLAY.get(model, model)
     method_disp = METHOD_DISPLAY.get(method, method)
@@ -165,6 +171,8 @@ def load_question_frames(_files_hash: str):
 
     for file_path in list_question_files():
         model, method, source, version = parse_filename(file_path)
+        if model == "unknown" or method == "unknown":
+            continue
         with file_path.open(encoding="utf-8") as f:
             data = json.load(f)
         questions = data.get("questions", [])
@@ -305,12 +313,10 @@ def shapiro_section(question_df: pd.DataFrame, metric: str):
                     "حجم العينة": n,
                     "إحصائية شابيرو": None,
                     "القيمة الاحتمالية": None,
-                    "الاستنتاج": "العينة خارج نطاق اختبار شابيرو",
                 }
             )
             continue
         stat, p_value = shapiro(values)
-        conclusion = "لا نرفض الفرضية الصفرية (توزيع طبيعي)" if p_value > 0.05 else "نرفض الفرضية الصفرية (توزيع غير طبيعي)"
         results.append(
             {
                 "النموذج": model,
@@ -318,7 +324,6 @@ def shapiro_section(question_df: pd.DataFrame, metric: str):
                 "حجم العينة": n,
                 "إحصائية شابيرو": round(float(stat), 4),
                 "القيمة الاحتمالية": round(float(p_value), 4),
-                "الاستنتاج": conclusion,
             }
         )
 
@@ -368,7 +373,6 @@ def mann_whitney_section(question_df: pd.DataFrame, metric: str):
                     "إحصائية U": None,
                     "القيمة الاحتمالية": None,
                     "الرتبة المتسلسلة": None,
-                    "الاستنتاج": "عينة غير كافية لإجراء الاختبار",
                 }
             )
             continue
@@ -388,8 +392,6 @@ def mann_whitney_section(question_df: pd.DataFrame, metric: str):
         else:
             effect = "تأثير قوي"
 
-        conclusion = "يوجد فرق ذو دلالة" if p_value < 0.05 else "لا يوجد فرق ذو دلالة"
-
         results.append(
             {
                 "النموذج": model,
@@ -403,7 +405,6 @@ def mann_whitney_section(question_df: pd.DataFrame, metric: str):
                 "القيمة الاحتمالية": round(float(p_value), 4),
                 "الحجم التأثيري (Rank-Biserial)": round(float(rank_biserial), 4),
                 "تفسير الحجم التأثيري": effect,
-                "الاستنتاج": conclusion,
             }
         )
 
@@ -434,7 +435,6 @@ def mann_whitney_by_version_section(question_df: pd.DataFrame, metric: str):
                     "إحصائية U": None,
                     "القيمة الاحتمالية": None,
                     "الرتبة المتسلسلة": None,
-                    "الاستنتاج": "عينة غير كافية لإجراء الاختبار",
                 }
             )
             continue
@@ -454,9 +454,7 @@ def mann_whitney_by_version_section(question_df: pd.DataFrame, metric: str):
         else:
             effect = "تأثير قوي"
 
-        conclusion = "يوجد فرق ذو دلالة" if p_value < 0.05 else "لا يوجد فرق ذو دلالة"
-
-        # تحديد من الأفضل (للأسئلة التي تعتبر قيمة أعلى أفضل)
+        # تحديد من الأفضل
         if metric in ["precision", "recall", "f1_score", "bleu", "bert_score"]:
             better = "RAG" if np.median(rag) > np.median(vanilla) else "Vanilla"
         else:  # perplexity - قيمة أقل أفضل
@@ -475,7 +473,6 @@ def mann_whitney_by_version_section(question_df: pd.DataFrame, metric: str):
                 "الحجم التأثيري (Rank-Biserial)": round(float(rank_biserial), 4),
                 "تفسير الحجم التأثيري": effect,
                 "الأفضل": better if p_value < 0.05 else "لا فرق ذو دلالة",
-                "الاستنتاج": conclusion,
             }
         )
 
@@ -492,7 +489,7 @@ def mann_whitney_by_version_section(question_df: pd.DataFrame, metric: str):
 def mann_whitney_by_version_filtered(question_df: pd.DataFrame, metric: str, version_filter: str):
     """مقارنة مباشرة بين RAG و Vanilla في فترة محددة (قبل أو بعد التحسين)"""
     version_name = "بعد التحسين" if version_filter == "after" else "قبل التحسين"
-    rtl_markdown(f"### اختبار مان ويتني: RAG مقابل Vanilla ({version_name})")
+    rtl_markdown(f"### اختبار مان ويتني ({version_name})")
     results = []
 
     filtered_df = filter_df_by_metric(question_df[question_df["version"] == version_filter], metric)
@@ -520,7 +517,6 @@ def mann_whitney_by_version_filtered(question_df: pd.DataFrame, metric: str, ver
                     "القيمة الاحتمالية": None,
                     "الحجم التأثيري (Rank-Biserial)": None,
                     "تفسير الحجم التأثيري": None,
-                    "الاستنتاج": "عينة غير كافية لإجراء الاختبار",
                 }
             )
             continue
@@ -544,8 +540,6 @@ def mann_whitney_by_version_filtered(question_df: pd.DataFrame, metric: str, ver
         else:
             effect = "تأثير قوي"
 
-        conclusion = "يوجد فرق ذو دلالة" if p_value < 0.05 else "لا يوجد فرق ذو دلالة"
-
         if metric in ["precision", "recall", "f1_score", "bleu", "bert_score"]:
             better = "RAG" if rag_mean > vanilla_mean else "Vanilla"
         else:
@@ -566,7 +560,6 @@ def mann_whitney_by_version_filtered(question_df: pd.DataFrame, metric: str, ver
                 "الحجم التأثيري (Rank-Biserial)": round(float(rank_biserial), 4),
                 "تفسير الحجم التأثيري": effect,
                 "الأفضل": better if p_value < 0.05 else "لا فرق ذو دلالة",
-                "الاستنتاج": conclusion,
             }
         )
 
@@ -582,7 +575,7 @@ def mann_whitney_by_version_filtered(question_df: pd.DataFrame, metric: str, ver
 
 def mann_whitney_before_after_section(question_df: pd.DataFrame, metric: str):
     """مقارنة قبل التحسين vs بعد التحسين لكل طريقة"""
-    rtl_markdown("### اختبار مان ويتني: قبل التحسين مقابل بعد التحسين (مقسم حسب النموذج والطريقة)")
+    rtl_markdown("### اختبار مان ويتني: قبل التحسين مقابل بعد التحسين")
     results = []
 
     for (model, method), group in filter_df_by_metric(question_df, metric).groupby(["model", "method"]):
@@ -599,7 +592,6 @@ def mann_whitney_before_after_section(question_df: pd.DataFrame, metric: str):
                     "إحصائية U": None,
                     "القيمة الاحتمالية": None,
                     "الرتبة المتسلسلة": None,
-                    "الاستنتاج": "عينة غير كافية لإجراء الاختبار",
                 }
             )
             continue
@@ -618,8 +610,6 @@ def mann_whitney_before_after_section(question_df: pd.DataFrame, metric: str):
             effect = "تأثير متوسط"
         else:
             effect = "تأثير قوي"
-
-        conclusion = "يوجد فرق ذو دلالة" if p_value < 0.05 else "لا يوجد فرق ذو دلالة"
 
         # تحديد ما إذا كان التحسين حسّن الأداء
         if metric in ["precision", "recall", "f1_score", "bleu", "bert_score"]:
@@ -640,7 +630,6 @@ def mann_whitney_before_after_section(question_df: pd.DataFrame, metric: str):
                 "الحجم التأثيري (Rank-Biserial)": round(float(rank_biserial), 4),
                 "تفسير الحجم التأثيري": effect,
                 "التأثير": improved if p_value < 0.05 else "لا فرق ذو دلالة",
-                "الاستنتاج": conclusion,
             }
         )
 
@@ -664,9 +653,7 @@ def render_comparison_plots(question_df: pd.DataFrame, metric: str, use_adaptive
     y_range = y_axis_range(metric, plot_df[metric], use_adaptive=use_adaptive_range)
 
     rtl_markdown("""
-    المخططات التالية تُظهر **أثر RAG على توليد الأسئلة** من خلال مقارنة مباشرة بين Vanilla و RAG في كلا الحالتين:
-    - **قبل التحسين**: مقارنة Vanilla vs RAG في النسخة الأصلية
-    - **بعد التحسين**: مقارنة Vanilla vs RAG في النسخة المحسّنة
+    المخططات التالية تُظهر **أثر RAG** على توليد الأسئلة قبل وبعد التحسين.
     """)
 
     color_discrete_map_vr = {
@@ -690,7 +677,7 @@ def render_comparison_plots(question_df: pd.DataFrame, metric: str, use_adaptive
             category_orders={"version": ["before", "after"]},
         )
         fig_vr_violin.update_layout(
-            title=f"مخطط Violin: أثر RAG (Vanilla vs RAG) قبل وبعد التحسين - {metric}",
+            title=f"مخطط Violin: أثر RAG قبل وبعد التحسين - {metric}",
             legend_title="الطريقة",
             template="plotly_white",
         )
@@ -702,12 +689,12 @@ def render_comparison_plots(question_df: pd.DataFrame, metric: str, use_adaptive
         embed_plotly(fig_vr_violin, height_px=940)
 
         # زر التصدير
-        if st.button(f"💾 تصدير مخطط Violin", key=f"export_vr_violin_{metric}", use_container_width=True):
+        if st.button(f"تصدير مخطط Violin", key=f"export_vr_violin_{metric}", use_container_width=True):
             try:
                 path = export_plot(fig_vr_violin, f"violin_rag_effect_{metric}.png")
-                st.success(f"✅ تم حفظ المخطط بنجاح في: `{path}`")
+                st.success(f"تم حفظ المخطط بنجاح في: `{path}`")
             except Exception as e:
-                st.error(f"❌ {str(e)}")
+                st.error(f"{str(e)}")
 
     with col2:
         fig_vr_box = px.box(
@@ -722,7 +709,7 @@ def render_comparison_plots(question_df: pd.DataFrame, metric: str, use_adaptive
             category_orders={"version": ["before", "after"]},
         )
         fig_vr_box.update_layout(
-            title=f"مخطط Box: أثر RAG (Vanilla vs RAG) قبل وبعد التحسين - {metric}",
+            title=f"مخطط Box: أثر RAG قبل وبعد التحسين - {metric}",
             legend_title="الطريقة",
             template="plotly_white",
         )
@@ -734,12 +721,12 @@ def render_comparison_plots(question_df: pd.DataFrame, metric: str, use_adaptive
         embed_plotly(fig_vr_box, height_px=940)
 
         # زر التصدير
-        if st.button(f"💾 تصدير مخطط Box", key=f"export_vr_box_{metric}", use_container_width=True):
+        if st.button(f"تصدير مخطط Box", key=f"export_vr_box_{metric}", use_container_width=True):
             try:
                 path = export_plot(fig_vr_box, f"box_rag_effect_{metric}.png")
-                st.success(f"✅ تم حفظ المخطط بنجاح في: `{path}`")
+                st.success(f"تم حفظ المخطط بنجاح في: `{path}`")
             except Exception as e:
-                st.error(f"❌ {str(e)}")
+                st.error(f"{str(e)}")
 
     st.markdown("<hr />", unsafe_allow_html=True)
 
@@ -802,7 +789,7 @@ def render_plots(question_df: pd.DataFrame, metric: str, use_adaptive_range: boo
     y_range = y_axis_range(metric, plot_df[metric], use_adaptive=use_adaptive_range)
 
     # عرض معلومات إحصائية
-    with st.expander("📊 إحصائيات سريعة للمقياس"):
+    with st.expander("إحصائيات سريعة للمقياس"):
         stats_df = plot_df.groupby(["model", "method"])[metric].agg([
             ("العدد", "count"),
             ("المتوسط", "mean"),
@@ -841,12 +828,12 @@ def render_plots(question_df: pd.DataFrame, metric: str, use_adaptive_range: boo
         embed_plotly(fig_violin, height_px=560)
 
         # زر التصدير
-        if st.button(f"💾 تصدير مخطط Violin", key=f"export_violin_{metric}", use_container_width=True):
+        if st.button(f"تصدير مخطط Violin", key=f"export_violin_{metric}", use_container_width=True):
             try:
                 path = export_plot(fig_violin, f"violin_{metric}.png")
-                st.success(f"✅ تم حفظ المخطط بنجاح في: `{path}`")
+                st.success(f"تم حفظ المخطط بنجاح في: `{path}`")
             except Exception as e:
-                st.error(f"❌ {str(e)}")
+                st.error(f"{str(e)}")
 
     with col2:
         fig_box = px.box(
@@ -869,12 +856,12 @@ def render_plots(question_df: pd.DataFrame, metric: str, use_adaptive_range: boo
         embed_plotly(fig_box, height_px=560)
 
         # زر التصدير
-        if st.button(f"💾 تصدير مخطط Box", key=f"export_box_{metric}", use_container_width=True):
+        if st.button(f"تصدير مخطط Box", key=f"export_box_{metric}", use_container_width=True):
             try:
                 path = export_plot(fig_box, f"box_{metric}.png")
-                st.success(f"✅ تم حفظ المخطط بنجاح في: `{path}`")
+                st.success(f"تم حفظ المخطط بنجاح في: `{path}`")
             except Exception as e:
-                st.error(f"❌ {str(e)}")
+                st.error(f"{str(e)}")
 
     st.markdown("<hr />", unsafe_allow_html=True)
 
@@ -935,23 +922,23 @@ def export_buttons(question_df: pd.DataFrame, metric: str):
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("💾 تصدير مخطط Violin", use_container_width=True):
+        if st.button("تصدير مخطط Violin", use_container_width=True):
             try:
                 path = export_plot(fig_violin, f"violin_{metric}.png")
-                st.success(f"✅ تم حفظ المخطط بنجاح في: `{path}`")
+                st.success(f"تم حفظ المخطط بنجاح في: `{path}`")
             except Exception as e:
-                st.error(f"❌ {str(e)}")
+                st.error(f"{str(e)}")
     with col2:
-        if st.button("💾 تصدير مخطط Box", use_container_width=True):
+        if st.button("تصدير مخطط Box", use_container_width=True):
             try:
                 path = export_plot(fig_box, f"box_{metric}.png")
-                st.success(f"✅ تم حفظ المخطط بنجاح في: `{path}`")
+                st.success(f"تم حفظ المخطط بنجاح في: `{path}`")
             except Exception as e:
-                st.error(f"❌ {str(e)}")
+                st.error(f"{str(e)}")
 
 
 def main():
-    rtl_markdown("# 📊 المقارنة والتحليل")
+    rtl_markdown("#  المقارنة والتحليل")
 
     files_hash = get_files_hash()
     if st.session_state.get("_outputs_files_hash") != files_hash:
@@ -972,7 +959,7 @@ def main():
     )
 
     rtl_markdown("---")
-    rtl_markdown("## 📊 التحليل الإحصائي")
+    rtl_markdown("##  التحليل الإحصائي")
 
     rtl_markdown("### اختبار شابيرو-ويلك")
     shapiro_section(question_df, selected_metric)
@@ -982,7 +969,7 @@ def main():
     mann_whitney_before_after_section(question_df, selected_metric)
 
     rtl_markdown("---")
-    rtl_markdown("## أثر RAG (Vanilla vs RAG)")
+    rtl_markdown("## أثر RAG")
 
     rtl_markdown("### قبل التحسين")
     mann_whitney_by_version_filtered(question_df, selected_metric, "before")
@@ -996,7 +983,7 @@ def main():
     # زر لحذف جميع المخططات
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("🗑️ حذف جميع المخططات المصدرة", type="secondary", use_container_width=True):
+        if st.button("حذف جميع المخططات المصدرة", type="secondary", use_container_width=True):
             try:
                 if PLOTS_DIR.exists():
                     files = list(PLOTS_DIR.glob("*"))
@@ -1006,17 +993,17 @@ def main():
                             file_path.unlink()
                             deleted_count += 1
                     if deleted_count > 0:
-                        st.success(f"✅ تم حذف {deleted_count} ملف من مجلد plots")
+                        st.success(f"تم حذف {deleted_count} ملف من مجلد plots")
                     else:
                         st.info("لا توجد ملفات في مجلد plots")
                 else:
                     st.info("مجلد plots غير موجود")
             except Exception as e:
-                st.error(f"❌ فشل حذف الملفات: {str(e)}")
+                st.error(f"فشل حذف الملفات: {str(e)}")
 
     rtl_markdown("")
     use_adaptive_range = st.checkbox(
-        "🔍 تكبير المناطق المهمة في المخططات (للمقاييس المتركزة)",
+        " تكبير المناطق المهمة في المخططات (للمقاييس المتركزة)",
         value=True,
         help="عند التفعيل، سيتم تكبير المناطق التي تحتوي على معظم البيانات لرؤية أفضل. مفيد للمقاييس المتركزة عند 1.0 مثل precision"
     )

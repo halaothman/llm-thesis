@@ -1,4 +1,4 @@
-"""بناء prompts، استدعاء Ollama، التحقق من JSON، وتوليد/إصلاح الأسئلة (Vanilla/RAG/رياضيات)."""
+"""بناء prompts، استدعاء Ollama، التحقق من JSON، وتوليد/إصلاح الأسئلة (Vanilla/RAG)."""
 import json
 import ollama
 import re
@@ -12,12 +12,14 @@ SYS_AR = "أنت معلّم خبير في إنشاء الأسئلة. مهمتك:
 SYS_EN = "You are an expert teacher in creating questions. Your task: Create as many different and accurate questions as possible from the given text (maximum 20 questions). Questions should be a mix of multiple choice questions (4 options each) and True/False questions. Each question must be unique and based on the text. **Very important:** Each option in multiple choice questions must be a real, appropriate, and specific answer from the text. **STRICTLY FORBIDDEN** to write 'option 1', 'option 2', 'option 3', 'option 4' or any generic options. **STRICTLY FORBIDDEN** to use interrogative words (what, where, why, how, when, who) in True/False questions. Return JSON only without any additional text."
 
 def detect_lang(text:str)->Literal["ar","en"]:
+    """اكتشاف لغة النص (عربي أو إنجليزي) لاختيار البرومبت المناسب."""
     try:
         return "ar" if detect(text)=="ar" else "en"
     except Exception:
         return "ar"
 
 def build_prompt_vanilla(text:str, lang:str):
+    """بناء برومبت توليد أسئلة Vanilla من النص المرفوع فقط (بدون RAG)."""
     if lang=="ar":
         return f"""{SYS_AR}
 
@@ -242,184 +244,6 @@ Required JSON format:
 Start now:"""
 
 
-MATH_SYS_AR = (
-    "أنت أستاذ جامعي وخبير في تصميم الاختبارات في الذكاء الاصطناعي والتعلم العميق. "
-    "أعد كائن JSON صالحاً فقط — ابدأ مباشرة بـ { وانتهِ بـ }. "
-    "ممنوع Markdown أو عناوين أو شرح أو تفكير خارج JSON."
-)
-
-MATH_BODY_AR = """ستحصل على:
-
-1. الملف التعليمي الذي رفعه المستخدم.
-2. معرفتك العامة بالنماذج اللغوية والتعلم العميق.
-
-========================================
-أولوية المصادر
-========================================
-
-اعتمد على المصادر بالترتيب التالي:
-
-1- الملف المرفوع هو المصدر الأساسي لموضوعات الدرس.
-2- استخدم معرفتك العامة فقط لإثراء الأمثلة أو إنشاء سيناريوهات حسابية مشابهة دون الخروج عن موضوع الملف.
-
-لا تنتقل إلى موضوع غير موجود في الملف المرفوع.
-
-========================================
-نوع الأسئلة
-========================================
-
-ولّد فقط خمسة أسئلة اختيار من متعدد.
-
-- 3 أسئلة حسابية.
-- 2 سؤال تحليلي.
-
-يجب أن تكون الأسئلة بمستوى جامعي متقدم وصعب.
-
-========================================
-الأسئلة الحسابية
-========================================
-
-إذا أنشأت سؤالاً حسابياً:
-
-- ضع جميع المعطيات داخل السؤال.
-- لا تفترض أي قيمة غير مذكورة في السؤال.
-- يجوز إنشاء سيناريو جديد بشرط أن يكون مستوحى من نفس المفاهيم الموجودة في الملف.
-
-مثال:
-
-بدلاً من سؤال:
-
-"احسب قيمة الخطأ."
-
-اكتب:
-
-"إذا كانت القيمة الحقيقية y=1 والقيمة المتوقعة ŷ=0.73، وكانت دالة الخطأ هي Mean Squared Error، فما قيمة الخطأ؟"
-
-مثال آخر:
-
-"إذا كانت طبقة الإدخال تحتوي على 512 عقدة، والطبقة المخفية على 64 عقدة، وطبقة الإخراج على 10 عقد، مع Bias لكل عصبون، فما عدد المعاملات القابلة للتدريب؟"
-
-========================================
-الأسئلة التحليلية
-========================================
-
-صمم أسئلة تقيس الفهم والاستنتاج وليس الحفظ.
-
-يمكن دمج أكثر من مفهوم موجود في الملف مثل:
-
-- Backpropagation
-- Gradient Descent
-- Learning Rate
-- Batch Size
-- Overfitting
-- Underfitting
-- Early Stopping
-- Regularization
-
-========================================
-الجودة
-========================================
-
-يجب أن:
-
-- يكون لكل سؤال جواب صحيح واحد فقط.
-- تكون الخيارات الأربعة منطقية.
-- يكون الحل صحيحاً رياضياً ومنطقياً.
-- تتطابق الإجابة مع الحل تماماً.
-- لا تستخدم خيارات واضحة أو مضحكة.
-- لا تكرر الأسئلة.
-- لا تذكر "حسب النص" أو "كما ورد في الملف".
-
-========================================
-الأهم
-========================================
-
-الأسئلة يجب أن تبدو وكأن أستاذاً جامعياً كتبها بعد قراءة الملف والاستفادة من المعرفة العلمية العامة، وليس مجرد إعادة صياغة لجمل موجودة في النص.
-
-تنسيق JSON المطلوب (بالضبط 5 أسئلة MCQ، بدون أسئلة صح/خطأ):
-{{
-  "mcq": [
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "شرح الحل", "type": "computational", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "شرح الحل", "type": "computational", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "شرح الحل", "type": "computational", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "شرح الحل", "type": "analytical", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "شرح الحل", "type": "analytical", "difficulty": "hard"}}
-  ],
-  "tf": []
-}}
-
-ابدأ الآن:"""
-
-
-MATH_BODY_COMPACT = """المطلوب: 5 أسئلة MCQ (3 حسابية + 2 تحليلية) بمستوى جامعي صعب.
-- المصدر الأساسي: الملف أدناه. استخدم معرفتك العامة فقط ضمن نفس الموضوع.
-- حسابية: ضع كل المعطيات في السؤال. تحليلية: قيس الفهم لا الحفظ.
-- كل سؤال: q, options[4], answer, solution, type (computational|analytical), difficulty=hard.
-
-{{
-  "mcq": [
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "...", "type": "computational", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "...", "type": "computational", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "...", "type": "computational", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "...", "type": "analytical", "difficulty": "hard"}},
-    {{"q": "...", "options": ["...", "...", "...", "..."], "answer": "...", "solution": "...", "type": "analytical", "difficulty": "hard"}}
-  ],
-  "tf": []
-}}"""
-
-MATH_SOURCE_MAX_CHARS = 2500
-MATH_FALLBACK_MODEL = "qwen2.5:7b"
-
-
-def build_prompt_math(text: str, lang: str) -> str:
-    """برومبت أسئلة رياضية — الملف المرفوع + المعرفة العامة (بدون RAG)."""
-    if len(text) > MATH_SOURCE_MAX_CHARS:
-        text = text[:MATH_SOURCE_MAX_CHARS] + "\n[...]"
-    if lang != "ar":
-        head = (
-            "You are a university professor expert in AI/deep learning exam design. "
-            "Generate exactly 5 hard MCQ (3 computational, 2 analytical) from the file below "
-            "plus general knowledge within the same topic. Return valid JSON only starting with {{."
-        )
-        return f"""{head}
-
-=== File ===
-{text}
-
-JSON: {{"mcq": [5 items with q, options, answer, solution, type, difficulty], "tf": []}}"""
-
-    return f"""{MATH_SYS_AR}
-
-=== الملف المرفوع ===
-{text}
-
-{MATH_BODY_COMPACT}"""
-
-
-MATH_MODEL = "deepseek-r1:7b"
-MATH_PROMPT_SET = "src/generator.py"
-
-_THINK_PATTERNS = (
-    r"<\s*redacted_thinking\s*>[\s\S]*?<\s*/\s*redacted_thinking\s*>",
-    r"<\s*think\s*>[\s\S]*?<\s*/\s*think\s*>",
-)
-
-
-def _clean_model_output(raw: str) -> str:
-    """إزالة بلوك التفكير من مخرجات DeepSeek-R1 قبل parse JSON."""
-    if not raw:
-        return ""
-    text = raw
-    for pattern in _THINK_PATTERNS:
-        text = re.sub(pattern, "", text, flags=re.IGNORECASE | re.DOTALL)
-    text = text.strip()
-    if not text.startswith("{") and "{" in text:
-        text = text[text.find("{"):]
-    if "}" in text:
-        text = text[: text.rfind("}") + 1]
-    return text.strip()
-
-
 def _extract_chat_response(resp, model_name: str = "") -> str:
     """استخراج النص النهائي من استجابة ollama.chat."""
     content = ""
@@ -439,8 +263,6 @@ def _extract_chat_response(resp, model_name: str = "") -> str:
     text = (content or "").strip()
     if thinking.strip():
         text = f"{text}\n{thinking.strip()}".strip() if text else thinking.strip()
-    if model_name and ("deepseek" in model_name.lower() or "qwen" in model_name.lower()):
-        text = _clean_model_output(text)
     return text.strip()
 
 
@@ -513,133 +335,64 @@ def check_and_pull_model(model_name: str):
         print(f"❌ خطأ في التحقق من النماذج: {e}")
         return False
 
-def call_llama(prompt: str, max_retries: int = 3, model_name: str = "llama3.2:3b", temperature: float = 0.7, json_format: bool = False):
+def call_llama(prompt: str, max_retries: int = 3, model_name: str = "llama3.2:3b", temperature: float = 0.7):
     """
-    استدعاء نموذج LLaMA مع إعادة المحاولة
+    استدعاء نموذج Ollama مع إعادة المحاولة
     
     Args:
         prompt: النص المراد إرساله للنموذج
         max_retries: عدد المحاولات القصوى
         model_name: اسم النموذج المستخدم
         temperature: درجة الحرارة للنموذج
-        json_format: فرض JSON عبر Ollama (مفيد لـ DeepSeek)
     """
-    # التحقق من وجود النموذج وعمل pull تلقائي إذا لزم الأمر
     if not check_and_pull_model(model_name):
         print(f"⚠️ تحذير: النموذج {model_name} غير متاح، سيتم المحاولة على أي حال")
-    
+
     for attempt in range(max_retries):
-        json_modes = [True] if json_format else [False]
-        for use_json_now in json_modes:
-            try:
-                print(f"🔄 محاولة {attempt + 1}/{max_retries} مع النموذج {model_name}"
-                      + (" (JSON)" if use_json_now else ""))
-                print(f"📏 طول الـ Prompt: {len(prompt)} حرف")
+        try:
+            print(f"🔄 محاولة {attempt + 1}/{max_retries} مع النموذج {model_name}")
+            print(f"📏 طول الـ Prompt: {len(prompt)} حرف")
 
-                is_deepseek = "deepseek" in model_name.lower()
-                chat_kwargs = {
-                    "model": model_name,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "options": {
-                        "num_ctx": 16384,
-                        "num_predict": 8192 if is_deepseek else 4096,
-                        "temperature": temperature,
-                        "top_p": 0.9,
-                        "repeat_penalty": 1.1,
-                        "stop": ["```"] if is_deepseek else ["```", "---", "==="],
-                    },
-                }
-                if use_json_now:
-                    chat_kwargs["format"] = "json"
+            resp = ollama.chat(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                options={
+                    "num_ctx": 16384,
+                    "num_predict": 4096,
+                    "temperature": temperature,
+                    "top_p": 0.9,
+                    "repeat_penalty": 1.1,
+                    "stop": ["```", "---", "==="],
+                },
+            )
 
-                resp = ollama.chat(**chat_kwargs)
+            if not resp:
+                print("⚠️ استجابة فارغة من ollama")
+                continue
 
-                if not resp:
-                    print(f"⚠️ استجابة فارغة من ollama")
-                    continue
+            response = _extract_chat_response(resp, model_name)
 
-                response = _extract_chat_response(resp, model_name)
+            if not response:
+                print("⚠️ استجابة فارغة أو غير صحيحة")
+                continue
 
-                if not response:
-                    print(f"⚠️ استجابة فارغة أو غير صحيحة")
-                    continue
+            print(f"✅ تم الحصول على استجابة (طول: {len(response)} حرف)")
+            return response
 
-                if json_format and not response.lstrip().startswith("{"):
-                    print("⚠️ الرد ليس JSON — محاولة أخرى...")
-                    continue
-
-                print(f"✅ تم الحصول على استجابة (طول: {len(response)} حرف)")
-                return response
-
-            except KeyError as e:
-                print(f"❌ خطأ في المفاتيح: {e}")
-            except Exception as e:
-                err = str(e)
-                if use_json_now and ("peg-native" in err or "status code: 500" in err):
-                    print("⚠️ format=json فشل — إعادة المحاولة بدون JSON mode...")
-                    continue
-                print(f"❌ خطأ في المحاولة {attempt + 1}: {e}")
-                print(f"🔍 تفاصيل الخطأ: {traceback.format_exc()}")
+        except KeyError as e:
+            print(f"❌ خطأ في المفاتيح: {e}")
+        except Exception as e:
+            print(f"❌ خطأ في المحاولة {attempt + 1}: {e}")
+            print(f"🔍 تفاصيل الخطأ: {traceback.format_exc()}")
 
         if attempt < max_retries - 1:
             wait_time = 3 * (attempt + 1)
             print(f"⏳ انتظار {wait_time} ثانية قبل المحاولة التالية...")
             time.sleep(wait_time)
-    
+
     print("❌ فشل في جميع المحاولات")
     return ""
 
-def generate_math_questions(raw_text: str, lang: str = "ar"):
-    """توليد أسئلة حسابية مع تقصير تدريجي للمصدر ونموذج احتياطي."""
-    models = [MATH_MODEL, MATH_FALLBACK_MODEL]
-    truncations = [MATH_SOURCE_MAX_CHARS, 1500, 800]
-
-    for model in models:
-        for max_chars in truncations:
-            chunk = raw_text[:max_chars]
-            prompt = build_prompt_math(chunk, lang)
-            print(f"🔢 math: model={model}, source={len(chunk)} chars, prompt={len(prompt)} chars")
-            response = call_llama(
-                prompt,
-                model_name=model,
-                temperature=0.3,
-                max_retries=2,
-                json_format=True,
-            )
-            if not response:
-                continue
-            out = safe_json(response, chunk, model, lang, None)
-            if out and isinstance(out, dict) and out.get("mcq"):
-                if "tf" not in out or not isinstance(out.get("tf"), list):
-                    out["tf"] = []
-                out["mcq"] = out["mcq"][:5]
-                out["math_model_used"] = model
-                return out
-    return None
-
-def get_available_models():
-    """
-    الحصول على قائمة النماذج المتاحة
-    """
-    # النماذج الافتراضية المدعومة
-    default_models = ["llama3.2:3b", "qwen2.5:7b"]
-    
-    try:
-        models = ollama.list()
-        installed_models = []
-        
-        # استخراج أسماء النماذج المثبتة
-        if models and hasattr(models, 'models'):
-            if hasattr(models.models, '__iter__'):
-                for model in models.models:
-                    if hasattr(model, 'model'):
-                        installed_models.append(model.model)
-        
-        # إرجاع النماذج المثبتة أو الافتراضية
-        return installed_models if installed_models else default_models
-    except Exception as e:
-        print(f"⚠️ خطأ في الحصول على قائمة النماذج: {e}")
-        return default_models
 
 def validate_question(question_data: dict, question_type: str, _source_text: str = "") -> tuple[bool, list[str]]:
     """
@@ -1031,8 +784,7 @@ def safe_json(s: str, source_text: str = "", model_name: str = "llama3.2:3b", la
                 return None
 
 def generate_questions_with_retry(prompt: str, max_retries: int = 3, source_text: str = "", 
-                                  model_name: str = "llama3.2:3b", lang: str = "ar", retrieved: list = None,
-                                  json_format: bool = False):
+                                  model_name: str = "llama3.2:3b", lang: str = "ar", retrieved: list = None):
     """
     توليد الأسئلة مع إعادة المحاولة
     """
@@ -1040,8 +792,7 @@ def generate_questions_with_retry(prompt: str, max_retries: int = 3, source_text
         print(f"🔄 محاولة توليد الأسئلة {attempt + 1}/{max_retries}")
         
         try:
-            # استدعاء النموذج
-            response = call_llama(prompt, model_name=model_name, max_retries=1, json_format=json_format)
+            response = call_llama(prompt, model_name=model_name, max_retries=1)
             
             if not response:
                 print(f"❌ فشل في الحصول على استجابة في المحاولة {attempt + 1}")

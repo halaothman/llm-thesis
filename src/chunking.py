@@ -1,5 +1,5 @@
 """تقسيم النص إلى قطع متداخلة بحجم وتداخل قابل للضبط."""
-def chunk_text(text: str, size: int = 800, overlap: int = 200):
+def chunk_text(text: str, size: int = 500, overlap: int = 100):
     """
     تقسيم النص إلى قطع متداخلة
     

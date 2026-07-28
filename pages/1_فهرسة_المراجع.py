@@ -8,9 +8,10 @@ import time
 from tqdm import tqdm
 import pandas as pd
 
-# إضافة المسار الجذر للمشروع إلى Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
+
+st.set_page_config(page_title="فهرسة المراجع", layout="wide")
 
 try:
     from src.loaders import load_text
@@ -21,11 +22,9 @@ except ImportError as e:
     st.error(f"خطأ في استيراد الوحدات: {e}")
     st.stop()
 
-st.set_page_config(page_title="فهرسة المراجع", layout="wide")
-
 # إضافة CSS شامل لجميع الصفحات
 try:
-    with open("style.css", "r", encoding="utf-8") as f:
+    with open(os.path.join(project_root, "style.css"), "r", encoding="utf-8") as f:
         css_content = f.read()
         st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
 except FileNotFoundError:
@@ -101,14 +100,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📚 فهرسة المراجع الخارجية (RAG)")
+st.title("فهرسة المراجع الخارجية (RAG)")
 
 # إعدادات المسارات
 DATA_DIR = "data-sources"
 os.makedirs("indexes", exist_ok=True)
 
 # معلومات النظام - التحقق من النموذج المستخدم
-from src.embeddings import get_model_name, get_model_info
+from src.embeddings import get_model_name
 from src.config import get_rag_version, set_rag_version, get_index_paths
 
 # الحصول على مسارات الفهرس بناءً على النسخة المحددة
@@ -116,13 +115,12 @@ IDX_PATH, META_PATH = get_index_paths()
 current_version = get_rag_version()
 
 embedding_model_name = get_model_name()
-model_info = get_model_info()
 
 # اختيار النسخة (Baseline vs Improved)
-st.subheader("🔄 نسخة RAG")
+st.subheader("نسخة RAG")
 version_options = {
-    "baseline": "📊 Baseline (الأصلية)",
-    "improved": "✨ Improved (المحسّنة)"
+    "baseline": " Baseline (الأصلية)",
+    "improved": " Improved (المحسّنة)"
 }
 selected_version = st.radio(
     "اختر النسخة للفهرسة:",
@@ -134,8 +132,6 @@ selected_version = st.radio(
 
 if selected_version != current_version:
     set_rag_version(selected_version)
-    # تحديث المسارات
-    IDX_PATH, META_PATH = get_index_paths()
     st.rerun()
 
 # تحديث المسارات بناءً على النسخة الحالية
@@ -163,59 +159,33 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     files_count = sum(len(f) for _,_,f in os.walk(DATA_DIR))
-    st.metric("📁 عدد ملفات المصادر", files_count)
+    st.metric("عدد ملفات المصادر", files_count)
 
 with col2:
     try:
         meta_lines = sum(1 for _ in open(META_PATH,"r",encoding="utf-8"))
-        st.metric("📄 عدد القطع المفهرسة", meta_lines)
+        st.metric("عدد القطع المفهرسة", meta_lines)
     except:
-        st.metric("📄 عدد القطع المفهرسة", 0)
+        st.metric("عدد القطع المفهرسة", 0)
 
 with col3:
     index_exists = os.path.exists(IDX_PATH)
-    st.metric("🗂️ حالة الفهرس", "✅ موجود" if index_exists else "❌ غير موجود")
-
-# عرض ملفات المصادر
-st.subheader("📋 ملفات المصادر المتاحة")
-if files_count > 0:
-    all_files = []
-    for root, _, files in os.walk(DATA_DIR):
-        for f in files:
-            all_files.append(os.path.join(root, f))
-    
-    # عرض الملفات في جدول
-    file_data = []
-    for file_path in all_files:
-        file_size = os.path.getsize(file_path)
-        file_ext = os.path.splitext(file_path)[1]
-        file_data.append({
-            "الملف": os.path.basename(file_path),
-            "المجلد": os.path.dirname(file_path).replace(DATA_DIR, "").strip("/"),
-            "النوع": file_ext,
-            "الحجم (KB)": round(file_size / 1024, 2)
-        })
-    
-    st.dataframe(file_data, use_container_width=True)
-else:
-    st.warning("لا توجد ملفات في مجلد المصادر")
-
-st.caption("⚠️ الفهرسة قد تستغرق وقتاً — لا تغلق المتصفح أثناءها.")
+    st.metric("حالة الفهرس", "موجود" if index_exists else "غير موجود")
 
 # زر الفهرسة
-st.subheader("🔧 عمليات الفهرسة")
+st.subheader("عمليات الفهرسة")
 
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    reindex = st.button("🔁 إعادة الفهرسة (تزايدية)", type="primary", use_container_width=True)
+    reindex = st.button("إعادة الفهرسة (تزايدية)", type="primary", use_container_width=True)
 
 with col2:
-    clear_index = st.button("🗑️ مسح الفهرس", type="secondary", use_container_width=True)
+    clear_index = st.button("مسح الفهرس", type="secondary", use_container_width=True)
 
 col3, col4 = st.columns([1, 1])
 with col3:
-    remove_duplicates = st.button("🧹 تنظيف التكرارات", type="secondary", use_container_width=True)
+    remove_duplicates = st.button("تنظيف التكرارات", type="secondary", use_container_width=True)
 
 if clear_index:
     try:
@@ -230,32 +200,32 @@ if clear_index:
 
 if remove_duplicates:
     if not os.path.exists(IDX_PATH) or not os.path.exists(META_PATH):
-        st.warning("⚠️ الفهرس غير موجود")
+        st.warning("الفهرس غير موجود")
     else:
         with st.spinner("جاري تنظيف التكرارات..."):
             try:
                 removed = remove_duplicate_chunks(IDX_PATH, META_PATH)
                 if removed > 0:
-                    st.success(f"✅ تم حذف {removed} قطعة مكررة من الفهرس")
+                    st.success(f"تم حذف {removed} قطعة مكررة من الفهرس")
                 else:
-                    st.info("ℹ️ لا توجد تكرارات في الفهرس")
+                    st.info("لا توجد تكرارات في الفهرس")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ خطأ في تنظيف التكرارات: {e}")
+                st.error(f"خطأ في تنظيف التكرارات: {e}")
 
 if reindex:
     if files_count == 0:
         st.warning("لا توجد ملفات في مجلد المصادر")
     else:
-        st.info("🚀 بدء عملية الفهرسة...")
+        st.info("بدء عملية الفهرسة...")
         
         # حساب إجمالي الملفات
         total_files = sum(1 for _,_,f in os.walk(DATA_DIR) for _ in f)
-        st.info(f"📁 سيتم معالجة {total_files} ملف(ات)")
+        st.info(f"سيتم معالجة {total_files} ملف(ات)")
         
         # تقدير الوقت المتوقع
         estimated_time = total_files * 2  # تقدير 2 ثانية لكل ملف
-        st.info(f"⏱️ الوقت المتوقع: {estimated_time//60} دقيقة و {estimated_time%60} ثانية")
+        st.info(f"الوقت المتوقع: {estimated_time//60} دقيقة و {estimated_time%60} ثانية")
         
         # إنشاء containers للتقدم
         progress_container = st.container()
@@ -301,13 +271,13 @@ if reindex:
                 files_to_index.append(path)
         
         # التحقق من الملفات المكررة وحذف القطع القديمة
-        status_text.markdown("🔍 **جاري التحقق من الملفات المكررة...**")
+        status_text.markdown(" **جاري التحقق من الملفات المكررة...**")
         current_file_text.markdown("**المرحلة:** التحقق من الملفات المكررة")
         
         # إنشاء مؤشر تقدم خاص بمرحلة التحقق من الملفات المكررة
         duplicate_check_container = st.container()
         with duplicate_check_container:
-            st.subheader("🔍 التحقق من الملفات المكررة")
+            st.subheader("التحقق من الملفات المكررة")
             duplicate_progress_bar = st.progress(0)
             duplicate_progress_text = st.empty()
             duplicate_stats_col1, duplicate_stats_col2, duplicate_stats_col3 = st.columns(3)
@@ -342,13 +312,13 @@ if reindex:
                 duplicate_files_count += 1
                 duplicate_files_found_metric.metric("الملفات المكررة", duplicate_files_count)
                 
-                status_text.markdown(f"🗑️ **جاري حذف القطع القديمة للملف:** `{os.path.basename(path)}`")
+                status_text.markdown(f" **جاري حذف القطع القديمة للملف:** `{os.path.basename(path)}`")
                 removed = remove_chunks_by_source(IDX_PATH, META_PATH, path)
                 total_removed_chunks += removed
                 chunks_removed_metric.metric("القطع المحذوفة", total_removed_chunks)
                 
                 if removed > 0:
-                    status_text.markdown(f"✅ **تم حذف {removed} قطعة قديمة للملف:** `{os.path.basename(path)}`")
+                    status_text.markdown(f" **تم حذف {removed} قطعة قديمة للملف:** `{os.path.basename(path)}`")
             
             # تحديث عدد الملفات المفحوصة
             duplicate_files_checked_metric.metric("الملفات المفحوصة", idx + 1)
@@ -360,9 +330,9 @@ if reindex:
         duplicate_check_time = time.time() - duplicate_check_start_time
         
         if total_removed_chunks > 0:
-            st.success(f"✅ **تم حذف {total_removed_chunks} قطعة قديمة من {duplicate_files_count} ملف(ات) مكرر(ة) في {duplicate_check_time:.1f} ثانية**")
+            st.success(f"**تم حذف {total_removed_chunks} قطعة قديمة من {duplicate_files_count} ملف(ات) مكرر(ة) في {duplicate_check_time:.1f} ثانية**")
         else:
-            st.info(f"ℹ️ **لم يتم العثور على ملفات مكررة. تم التحقق من {len(files_to_index)} ملف(ات) في {duplicate_check_time:.1f} ثانية**")
+            st.info(f"**لم يتم العثور على ملفات مكررة. تم التحقق من {len(files_to_index)} ملف(ات) في {duplicate_check_time:.1f} ثانية**")
         
         # إعادة تعيين مؤشرات التقدم للفهرسة
         st.divider()
@@ -370,7 +340,7 @@ if reindex:
         # إنشاء قسم منفصل لعملية الفهرسة
         indexing_container = st.container()
         with indexing_container:
-            st.subheader("📚 عملية الفهرسة")
+            st.subheader("عملية الفهرسة")
             indexing_progress_bar = st.progress(0)
             indexing_progress_text = st.empty()
             indexing_phase_text = st.empty()
@@ -385,7 +355,7 @@ if reindex:
             with indexing_stats_col4:
                 indexing_speed_metric = st.metric("السرعة", "0 ملف/ث")
         
-        status_text.markdown("📚 **بدء عملية الفهرسة...**")
+        status_text.markdown(" **بدء عملية الفهرسة...**")
         current_file_text.markdown("**المرحلة:** فهرسة الملفات")
         
         # معالجة الملفات
@@ -403,23 +373,23 @@ if reindex:
                 indexing_progress_text.text(f"التقدم: {file_idx + 1}/{len(files_to_index)} ملف ({file_progress*100:.1f}%)")
                 
                 # تحديث المرحلة الحالية
-                indexing_phase_text.markdown("📖 **المرحلة:** تحميل الملف...")
-                status_text.markdown(f"📖 **جاري تحميل الملف:** `{f}`")
+                indexing_phase_text.markdown(" **المرحلة:** تحميل الملف...")
+                status_text.markdown(f" **جاري تحميل الملف:** `{f}`")
                 
                 # تحميل النص
                 load_start = time.time()
                 text = load_text(path)
                 phase_timers["load_text"] += time.time() - load_start
                 if not text.strip():
-                    st.warning(f"⚠️ ملف فارغ: {f}")
+                    st.warning(f"ملف فارغ: {f}")
                     continue
                 
                 file_size = len(text.encode('utf-8')) / 1024  # KB
                 total_text_size += file_size
                 
                 # تحديث المرحلة
-                indexing_phase_text.markdown("🧹 **المرحلة:** تنظيف وتجذيع النص...")
-                status_text.markdown(f"🧹 **جاري تنظيف النص:** `{f}`")
+                indexing_phase_text.markdown(" **المرحلة:** تنظيف وتجذيع النص...")
+                status_text.markdown(f" **جاري تنظيف النص:** `{f}`")
                 
                 # تنظيف النص
                 clean_start = time.time()
@@ -428,8 +398,8 @@ if reindex:
                 phase_timers["clean_stem"] += time.time() - clean_start
                 
                 # تحديث المرحلة
-                indexing_phase_text.markdown("✂️ **المرحلة:** تقسيم النص إلى قطع...")
-                status_text.markdown(f"✂️ **جاري تقسيم النص إلى قطع:** `{f}`")
+                indexing_phase_text.markdown(" **المرحلة:** تقسيم النص إلى قطع...")
+                status_text.markdown(f" **جاري تقسيم النص إلى قطع:** `{f}`")
                 
                 # تقسيم إلى قطع
                 chunk_start = time.time()
@@ -437,8 +407,8 @@ if reindex:
                 phase_timers["chunking"] += time.time() - chunk_start
                 
                 # تحديث المرحلة
-                indexing_phase_text.markdown("🔄 **المرحلة:** إعداد القطع للفهرسة...")
-                status_text.markdown(f"🔄 **جاري إعداد القطع:** `{f}`")
+                indexing_phase_text.markdown(" **المرحلة:** إعداد القطع للفهرسة...")
+                status_text.markdown(f" **جاري إعداد القطع:** `{f}`")
                 
                 # حساب checksum للملف لتتبع التغييرات
                 file_checksum = calculate_file_checksum(path)
@@ -523,10 +493,10 @@ if reindex:
                 speed_metric.metric("السرعة", f"{speed:.2f} ملف/ث")
                 
                 # تحديث المرحلة
-                indexing_phase_text.markdown(f"✅ **تم معالجة الملف:** `{f}` - {file_chunks} قطعة")
+                indexing_phase_text.markdown(f" **تم معالجة الملف:** `{f}` - {file_chunks} قطعة")
                 
                 # رسالة نجاح الملف
-                status_text.markdown(f"✅ **تم معالجة:** `{f}` - {file_chunks} قطعة - {file_size:.1f} KB - {file_time:.1f}ث")
+                status_text.markdown(f" **تم معالجة:** `{f}` - {file_chunks} قطعة - {file_size:.1f} KB - {file_time:.1f}ث")
                     
                 # تقدير الوقت المتبقي
                 if speed > 0:
@@ -534,16 +504,16 @@ if reindex:
                     eta_seconds = remaining_files / speed
                     eta_minutes = int(eta_seconds // 60)
                     eta_secs = int(eta_seconds % 60)
-                    status_text.markdown(f"⏳ **الوقت المتبقي:** {eta_minutes}د {eta_secs}ث")
+                    status_text.markdown(f" **الوقت المتبقي:** {eta_minutes}د {eta_secs}ث")
                 
             except Exception as e:
-                st.error(f"❌ خطأ في معالجة {f}: {e}")
+                st.error(f"خطأ في معالجة {f}: {e}")
                 continue
         
         # حفظ الفهرس
         if records:
-            indexing_phase_text.markdown("💾 **المرحلة:** حفظ الفهرس في FAISS...")
-            status_text.markdown("💾 **جاري حفظ الفهرس...**")
+            indexing_phase_text.markdown(" **المرحلة:** حفظ الفهرس في FAISS...")
+            status_text.markdown(" **جاري حفظ الفهرس...**")
             
             # تقسيم إلى batches لتجنب مشاكل الذاكرة
             batch_size = 16
@@ -566,8 +536,8 @@ if reindex:
                 saving_progress_bar.progress(saving_progress)
                 saving_progress_text.text(f"حفظ الدفعة: {batch_num}/{total_batches} ({saving_progress*100:.1f}%)")
                 
-                indexing_phase_text.markdown(f"💾 **المرحلة:** حفظ الدفعة {batch_num}/{total_batches} ({len(batch)} قطعة)...")
-                status_text.markdown(f"💾 **حفظ الدفعة {batch_num}/{total_batches} ({len(batch)} قطعة)...**")
+                indexing_phase_text.markdown(f" **المرحلة:** حفظ الدفعة {batch_num}/{total_batches} ({len(batch)} قطعة)...")
+                status_text.markdown(f" **حفظ الدفعة {batch_num}/{total_batches} ({len(batch)} قطعة)...**")
                 index_start = time.time()
                 
                 # استخدام build_or_update مع فحص التكرارات
@@ -597,17 +567,17 @@ if reindex:
             saving_progress_text.text(f"تم حفظ جميع الدفعات: {total_batches}/{total_batches} (100%)")
             indexing_progress_bar.progress(1.0)
             indexing_progress_text.text(f"تمت الفهرسة بنجاح: {len(files_to_index)}/{len(files_to_index)} ملف (100%)")
-            indexing_phase_text.markdown("✅ **اكتملت عملية الفهرسة بنجاح!**")
+            indexing_phase_text.markdown(" **اكتملت عملية الفهرسة بنجاح!**")
             progress_bar.progress(1.0)
             progress_text.text("تمت الفهرسة بنجاح!")
-            status_text.markdown("🎉 **تمت الفهرسة بنجاح!**")
+            status_text.markdown(" **تمت الفهرسة بنجاح!**")
             
             # النتائج النهائية
             total_time = time.time() - start_time
-            st.success(f"✅ **تمت فهرسة {len(records)} قطعة من {counter} ملف(ات) في {total_time:.1f} ثانية**")
+            st.success(f"**تمت فهرسة {len(records)} قطعة من {counter} ملف(ات) في {total_time:.1f} ثانية**")
 
             # عرض مخطط زمني مختصر لمراحل الفهرسة لتوثيقها بسهولة
-            st.subheader("🧭 المخطط الزمني للفهرسة")
+            st.subheader("المخطط الزمني للفهرسة")
             phases_labels = {
                 "load_text": "تحميل الملفات",
                 "clean_stem": "تنظيف وتجذيع النصوص",
@@ -637,7 +607,7 @@ if reindex:
             st.table(pd.DataFrame(timing_rows))
             
             # عرض إحصائيات مفصلة
-            st.subheader("📊 الإحصائيات النهائية")
+            st.subheader("الإحصائيات النهائية")
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
@@ -659,4 +629,4 @@ if reindex:
                 st.metric("متوسط حجم الملف", f"{total_text_size/counter:.1f} KB" if counter > 0 else "0 KB")
                 
         else:
-            st.error("❌ لم يتم إنشاء أي قطع للفهرسة")
+            st.error("لم يتم إنشاء أي قطع للفهرسة")

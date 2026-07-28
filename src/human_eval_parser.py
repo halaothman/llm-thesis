@@ -27,6 +27,7 @@ num_re = re.compile(r"(?<!\d)([1-6](?:\.\d+)?)")
 
 
 def extract_groups(text: str):
+    """تقسيم النص الخام إلى مقاطع حسب عناوين مجموعات النماذج والطرق."""
     groups = []
     for header, group in GROUP_HEADERS:
         idx = text.find(header)
@@ -42,6 +43,7 @@ def extract_groups(text: str):
 
 
 def parse_sequential_20x6(segment_text: str):
+    """استخراج 120 درجة (20 سؤال × 6 معايير) بالترتيب من مقطع ملاحظات التقييم."""
     # Extract first 120 numbers and map to qid 1..20, 6 metrics each in METRIC_ORDER
     numbers = [float(x) for x in num_re.findall(segment_text)]
     qid_to_metrics = {}
@@ -58,6 +60,7 @@ def parse_sequential_20x6(segment_text: str):
 
 
 def parse():
+    """قراءة الملاحظات الخام وتصدير صفوف CSV منظمة إلى uploads/human_evaluation_raw.csv."""
     text = RAW_PATH.read_text(encoding="utf-8", errors="ignore")
     segments = extract_groups(text)
 
