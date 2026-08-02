@@ -1,123 +1,86 @@
-"""صفحة توليد الأسئلة: Vanilla و RAG، مع حفظ JSON وعرض الاختبار."""
-import streamlit as st
+"""صفحة توليد الأسئلة: Vanilla و RAG، عرض الأسئلة وحفظ JSON عند طلب المستخدم."""
 import os
-import time
 import sys
-import numpy as np
+import time
 from pathlib import Path
+from typing import List, Optional
 
-# إضافة المسار الجذر للمشروع إلى Python path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+import streamlit as st
 
 try:
-    from src.loaders import load_text
-    from src.chunking import chunk_text
     from src.arabic_text import clean_ar
-    from src.faiss_store import build_index, search, load_meta
+    from src.config import get_index_paths, get_rag_version, set_rag_version
+    from src.embeddings import get_model_name
+    from src.generator import (
+        build_prompt_rag,
+        build_prompt_vanilla,
+        call_llama,
+        detect_lang,
+        generate_questions_with_retry,
+        safe_json,
+    )
+    from src.loaders import load_text
     from src.rag import retrieve
-    from src.generator import detect_lang, build_prompt_vanilla, build_prompt_rag, call_llama, safe_json, generate_questions_with_retry
-    from src.storage import save_group
-    from src.embeddings import embed_texts, get_model_name, get_model_info
-    from src.config import get_rag_version, set_rag_version, get_index_paths
+    from src.question_counts import count_llm_questions
+    from src.storage import save_group, save_questions_separate_file
+    from src.ui_styles import inject_app_styles
 except ImportError as e:
     st.error(f"خطأ في استيراد الوحدات: {e}")
     st.stop()
 
 st.set_page_config(page_title="توليد الأسئلة", layout="wide")
 
-# إضافة CSS شامل لجميع الصفحات
-try:
-    with open("style.css", "r", encoding="utf-8") as f:
-        css_content = f.read()
-        st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
-except FileNotFoundError:
-    # CSS احتياطي إذا لم يوجد الملف
-    st.markdown("""
-    <style>
-        .stApp { direction: rtl; }
-        .stApp > div:first-child { direction: rtl; flex-direction: row-reverse; }
-        .stSidebar { direction: rtl; text-align: right; order: 2; }
-        .main .block-container { direction: rtl; text-align: right; order: 1; }
-        .stSidebar * { direction: rtl; text-align: right; }
-    </style>
-    """, unsafe_allow_html=True)
+inject_app_styles()
 
-# إضافة CSS إضافي لمحاذاة أفضل
-st.markdown("""
-<style>
-    /* محاذاة خاصة بصفحة توليد الأسئلة */
-    .stFileUploader {
-        direction: rtl;
-    }
-    
-    .stFileUploader > div {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* محاذاة أزرار الراديو */
-    .stRadio > div > label {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    .stRadio > div > div {
-        direction: rtl;
-    }
-    
-    /* محاذاة أزرار الاختيار */
-    .stCheckbox > div > label {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* محاذاة العناوين */
-    .stMarkdown h3 {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    .stMarkdown h4 {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* محاذاة الـ spinner */
-    .stSpinner > div {
-        direction: rtl;
-    }
-    
-    /* محاذاة الـ expander للمصادر */
-    .streamlit-expanderHeader {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    .streamlit-expanderContent {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* محاذاة النصوص في المصادر */
-    .stMarkdown blockquote {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* محاذاة الـ code blocks */
-    .stCode {
-        direction: ltr;
-        text-align: left;
-    }
-</style>
-""", unsafe_allow_html=True)
+UPLOADS = "uploads"
+os.makedirs(UPLOADS, exist_ok=True)
 
-st.title("توليد الأسئلة (Vanilla & RAG)")
+TEMPERATURE = 0.7
+MAX_RETRIES = 3
+
+RAG_SETTINGS = {
+    "baseline": {"label": "Baseline (الأصلية)", "threshold": 0.82},
+    "improved": {"label": "Improved (المحسّنة)", "threshold": 0.65},
+}
+
+
+def rag_settings_for_version(version: str) -> dict:
+    return RAG_SETTINGS.get(version, RAG_SETTINGS["baseline"])
+
+
+def format_rag_source_line(source: dict, version: str) -> str:
+    name = source.get("filename", "—")
+    if version == "improved" and "rerank_score" in source:
+        faiss = source.get("original_score", source.get("score", 0))
+        rerank = source.get("rerank_score", source.get("score", 0))
+        return (
+            f"- `{name}` "
+            f"(تشابه FAISS: {faiss:.2f} · إعادة ترتيب: {rerank:.2f})"
+        )
+    score = source.get("score", 0)
+    return f"- `{name}` (تشابه FAISS: {score:.2f})"
+
+
+def ollama_model_names() -> List[str]:
+    try:
+        import ollama
+
+        listed = ollama.list()
+    except Exception:
+        return []
+    names: List[str] = []
+    if listed and hasattr(listed, "models") and hasattr(listed.models, "__iter__"):
+        for model in listed.models:
+            if hasattr(model, "model"):
+                names.append(model.model)
+    return names
 
 
 def display_questions_with_answers(questions: dict) -> None:
-    """عرض الأسئلة مع الإجابات الصحيحة (بدون واجهة اختبار)."""
     if not questions or not isinstance(questions, dict):
         st.info("لا توجد أسئلة للعرض.")
         return
@@ -155,573 +118,298 @@ def display_questions_with_answers(questions: dict) -> None:
             st.markdown(f"**الإجابة:** {ans_label}")
             st.divider()
 
-# اختيار النموذج في بداية الصفحة
-st.subheader("اختر النموذج")
-col1, col2 = st.columns(2)
 
+def parse_llm_questions(
+    prompt: str,
+    raw_text: str,
+    model_name: str,
+    lang: str,
+    retrieved=None,
+) -> Optional[dict]:
+    response = call_llama(prompt, model_name=model_name, temperature=TEMPERATURE)
+    out = safe_json(response, raw_text, model_name, lang, retrieved)
+    if out is None:
+        out = generate_questions_with_retry(
+            prompt,
+            max_retries=MAX_RETRIES,
+            source_text=raw_text,
+            model_name=model_name,
+            lang=lang,
+            retrieved=retrieved,
+        )
+    if out is None or not isinstance(out, dict) or "mcq" not in out or "tf" not in out:
+        return None
+    if not (out.get("mcq") or out.get("tf")):
+        return None
+    return out
+
+
+def save_output(out: dict, model_name: str, method: str, upload_name: str, lang: str) -> None:
+    try:
+        filename, num_questions = save_questions_separate_file(
+            out, model_name, method, upload_name, lang,
+        )
+        st.success(f"تم حفظ {num_questions} سؤال في `{filename}`")
+    except Exception as e:
+        st.error(f"خطأ في حفظ الملف: {e}")
+        group = "A" if method == "vanilla" else "B"
+        save_group(
+            group,
+            {
+                "lang": lang,
+                **out,
+                "source_file": upload_name,
+                "generation_time": out.get("generation_time", 0.0),
+                "method": method,
+            },
+        )
+        st.warning("تم الحفظ الاحتياطي في outputs/questions.json")
+
+
+def run_vanilla(raw_text: str, upload_name: str, model_name: str, lang: str) -> None:
+    with st.spinner("جاري توليد الأسئلة (Vanilla)..."):
+        try:
+            prompt = build_prompt_vanilla(raw_text, lang)
+            start = time.time()
+            out = parse_llm_questions(prompt, raw_text, model_name, lang, retrieved=None)
+            if out is None:
+                st.error(
+                    "فشل توليد الأسئلة أو تنسيق JSON. "
+                    "تأكد أن Ollama يعمل والنموذج المختار متاح، ثم أعد المحاولة."
+                )
+                return
+            out["source_text"] = raw_text
+            out["generation_time"] = time.time() - start
+            st.caption(
+                f"عدد الأسئلة: {count_llm_questions(out)} — "
+                f"الوقت: {out['generation_time']:.1f} ث"
+            )
+            st.session_state.vanilla_questions = out
+            st.session_state.vanilla_generated = True
+            st.session_state.vanilla_saved = False
+            st.session_state.vanilla_context = {
+                "upload_name": upload_name,
+                "lang": lang,
+                "model_name": model_name,
+            }
+        except Exception as e:
+            st.error(f"خطأ في توليد الأسئلة: {e}")
+
+
+def run_rag(
+    raw_text: str,
+    upload_name: str,
+    model_name: str,
+    lang: str,
+    idx_path: str,
+    meta_path: str,
+) -> None:
+    with st.spinner("جاري الاسترجاع وتوليد الأسئلة (RAG)..."):
+        try:
+            query = clean_ar(raw_text)
+            retrieved = retrieve(idx_path, meta_path, query)
+            if not retrieved:
+                version = get_rag_version()
+                cfg = rag_settings_for_version(version)
+                st.error("لم يُعثر على مقاطع مشابهة بدرجة كافية في الفهرس.")
+                st.info(
+                    f"عتبة النسخة الحالية ({cfg['label']}): {cfg['threshold']}. "
+                    "أضف مصادر في «فهرسة قاعدة المعرفة» أو جرّب Vanilla."
+                )
+                return
+
+            prompt = build_prompt_rag(raw_text, lang, retrieved)
+            start = time.time()
+            out = parse_llm_questions(prompt, raw_text, model_name, lang, retrieved=retrieved)
+            if out is None:
+                st.error(
+                    "فشل توليد الأسئلة أو تنسيق JSON. "
+                    "تأكد أن Ollama يعمل والنموذج المختار متاح، ثم أعد المحاولة."
+                )
+                return
+
+            out["sources"] = retrieved
+            out["source_text"] = raw_text
+            out["generation_time"] = time.time() - start
+
+            st.caption(
+                f"مقاطع RAG: {len(retrieved)} — عدد الأسئلة: {count_llm_questions(out)} — "
+                f"الوقت: {out['generation_time']:.1f} ث"
+            )
+            st.session_state.rag_questions = out
+            st.session_state.rag_generated = True
+            st.session_state.rag_saved = False
+            st.session_state.rag_context = {
+                "upload_name": upload_name,
+                "lang": lang,
+                "model_name": model_name,
+            }
+        except Exception as e:
+            st.error(f"خطأ في توليد الأسئلة: {e}")
+
+
+# --- واجهة الصفحة ---
+st.title("توليد الأسئلة (Vanilla & RAG)")
+
+col1, col2 = st.columns(2)
 with col1:
     if st.button("LLaMA 3.2:3B", use_container_width=True, type="primary"):
         st.session_state.selected_model = "llama3.2:3b"
-
 with col2:
     if st.button("Qwen 2.5:7B", use_container_width=True, type="primary"):
         st.session_state.selected_model = "qwen2.5:7b"
 
-if 'selected_model' in st.session_state:
+if st.session_state.get("selected_model"):
     st.caption(f"النموذج: **{st.session_state.selected_model}**")
 else:
     st.warning("اختر نموذجاً أولاً")
 
 st.markdown("---")
 
-# إعدادات المسارات
-UPLOADS = "uploads"
-os.makedirs(UPLOADS, exist_ok=True)
+idx_path, meta_path = get_index_paths()
+current_version = get_rag_version()
 
-# استيراد دالة الحصول على مسارات الفهرس
-from src.config import get_index_paths
-
-# الحصول على مسارات الفهرس بناءً على النسخة المحددة
-IDX_PATH, META_PATH = get_index_paths()
-
-# إعدادات النظام (سيتم تحديثها بناءً على النسخة المختارة)
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 100
-TEMPERATURE = 0.7
-MAX_RETRIES = 3
-
-# الحصول على النسخة الحالية
-def get_current_settings():
-    """الحصول على الإعدادات الحالية بناءً على النسخة المختارة"""
-    version = get_rag_version()
-    if version == "baseline":
-        return {
-            "TOP_K": 5,
-            "SIMILARITY_THRESHOLD": 0.82,
-            "EMBEDDING_MODEL": "intfloat/e5-large-v2"
-        }
-    else:  # improved
-        return {
-            "TOP_K": 10,
-            "SIMILARITY_THRESHOLD": 0.65,
-            "EMBEDDING_MODEL": "aubmindlab/bert-base-arabertv2"
-        }
-
-# دالة للحصول على الإعدادات الحالية (يتم استدعاؤها عند الحاجة)
-def get_settings():
-    """الحصول على الإعدادات الحالية بناءً على النسخة المختارة"""
-    return get_current_settings()
-
-# تهيئة الإعدادات الأولية
-settings = get_settings()
-TOP_K = settings["TOP_K"]
-SIMILARITY_THRESHOLD = settings["SIMILARITY_THRESHOLD"]
-EMBEDDING_MODEL = settings["EMBEDDING_MODEL"]
-
-# الشريط الجانبي - إعدادات النظام
 with st.sidebar:
     st.header("إعدادات النظام")
-    
-    # حالة Ollama
-    st.subheader("حالة Ollama")
-    try:
-        import ollama
-        models = ollama.list()
-        
-        # التحقق من صحة الاستجابة
-        if models and hasattr(models, 'models'):
-            installed_models = []
-            if hasattr(models.models, '__iter__'):
-                for model in models.models:
-                    if hasattr(model, 'model'):
-                        installed_models.append(model.model)
-                    else:
-                        st.warning(f"نموذج غير صالح: {model}")
-        elif models and isinstance(models, list):
-            # في حالة كانت الاستجابة قائمة مباشرة
-            installed_models = []
-            for model in models:
-                if hasattr(model, 'model'):
-                    installed_models.append(model.model)
-                elif isinstance(model, dict) and "model" in model:
-                    installed_models.append(model["model"])
-                else:
-                    st.warning(f"نموذج غير صالح: {model}")
-            
-            if installed_models:
-                st.success("Ollama يعمل")
-                st.write(f"النماذج المثبتة: {len(installed_models)}")
-                
-                # عرض النماذج المثبتة
-                for model in installed_models:
-                    if "llama3.2:3b" in model:
-                        st.write(f"• {model} ")
-                    elif "qwen" in model.lower():
-                        st.write(f"• {model} ")
-                    else:
-                        st.write(f"• {model}")
-                
-                # عرض النماذج المدعومة غير المثبتة
-                supported_models = ["llama3.2:3b", "qwen2.5:7b"]
-                missing_models = [model for model in supported_models if not any(model in installed for installed in installed_models)]
-                if missing_models:
-                    st.write("النماذج المدعومة غير المثبتة:")
-                    for model in missing_models:
-                        st.write(f"• {model} ")
-                    
-                    # زر تثبيت النماذج
-                    if st.button("تثبيت النماذج المفقودة", key="install_models"):
-                        st.info("لتثبيت النماذج، استخدم الأوامر التالية في Terminal:")
-                        for model in missing_models:
-                            st.code(f"ollama pull {model}", language="bash")
-            else:
-                st.warning("لا توجد نماذج مثبتة")
-                st.info("لتثبيت نماذج، استخدم: `ollama pull llama3.2:3b`")
+
+    st.subheader("Ollama")
+    installed = ollama_model_names()
+    llama_ok = any("llama3.2:3b" in name for name in installed)
+    qwen_ok = any("qwen2.5:7b" in name for name in installed)
+    if llama_ok and qwen_ok:
+        st.success("LLaMA و Qwen متصلان")
+    elif installed:
+        if llama_ok:
+            st.warning("LLaMA متصل — Qwen غير متاح")
+        elif qwen_ok:
+            st.warning("Qwen متصل — LLaMA غير متاح")
         else:
-            st.error("استجابة غير صحيحة من Ollama")
-            st.write(f"الاستجابة: {models}")
-    except Exception as e:
-        st.error(f"خطأ في الاتصال بـ Ollama: {e}")
-        st.write("تأكد من أن Ollama يعمل: `ollama serve`")
-    
+            st.warning("Ollama متصل — LLaMA و Qwen غير متاحين")
+    else:
+        st.warning("تعذّر الاتصال بـ Ollama")
+
     st.markdown("---")
-    
-    # اختيار النسخة (Baseline vs Improved)
     st.subheader("نسخة RAG")
-    current_version = get_rag_version()
-    version_options = {
-        "baseline": " Baseline (الأصلية)",
-        "improved": " Improved (المحسّنة)"
-    }
     selected_version = st.radio(
-        "اختر النسخة:",
+        "النسخة",
         options=["baseline", "improved"],
         index=0 if current_version == "baseline" else 1,
-        format_func=lambda x: version_options[x],
-        key="rag_version_selector"
+        format_func=lambda v: rag_settings_for_version(v)["label"],
+        key="rag_version_selector",
     )
-    
     if selected_version != current_version:
         set_rag_version(selected_version)
-        # تحديث الإعدادات والمسارات
-        new_settings = get_current_settings()
-        IDX_PATH, META_PATH = get_index_paths()  # تحديث مسارات الفهرس
-        st.session_state['top_k'] = new_settings["TOP_K"]
-        st.session_state['similarity_threshold'] = new_settings["SIMILARITY_THRESHOLD"]
         st.rerun()
-    
-    # تحديث المسارات بناءً على النسخة الحالية
-    IDX_PATH, META_PATH = get_index_paths()
-    
-    # تحديث الإعدادات من session state إذا كانت موجودة
-    if 'top_k' in st.session_state:
-        TOP_K = st.session_state['top_k']
-    if 'similarity_threshold' in st.session_state:
-        SIMILARITY_THRESHOLD = st.session_state['similarity_threshold']
-    
-    # تحديث الإعدادات بناءً على النسخة الحالية
-    current_settings = get_current_settings()
-    TOP_K = current_settings["TOP_K"]
-    SIMILARITY_THRESHOLD = current_settings["SIMILARITY_THRESHOLD"]
-    EMBEDDING_MODEL = current_settings["EMBEDDING_MODEL"]
-    
-    # عرض معلومات النسخة
-    version_info = {
-        "baseline": {
-            "name": "Baseline (الأصلية)",
-            "model": "intfloat/e5-large-v2",
-            "top_k": 5,
-            "threshold": 0.82,
-            "description": "النسخة الأصلية قبل التحسين"
-        },
-        "improved": {
-            "name": "Improved (المحسّنة)",
-            "model": "aubmindlab/bert-base-arabertv2",
-            "top_k": 10,
-            "threshold": 0.65,
-            "description": "النسخة المحسّنة بعد التحسين"
-        }
-    }
-    
-    info = version_info[current_version]
-    st.caption(f"{info['name']} — Top-K {info['top_k']}, عتبة {info['threshold']}")
-    
-    st.markdown("---")
-    
-    # إعدادات التضمين (تحديث تلقائي بناءً على النسخة)
-    st.subheader("نظام التضمين")
-    model_name = get_model_name()
-    model_info = get_model_info()
-    st.metric("النموذج", model_name)
-    st.metric("النسخة", info['name'])
-    st.metric("حجم الشنك", f"{CHUNK_SIZE} حرف")
-    st.metric("التداخل", f"{CHUNK_OVERLAP} حرف")
-    st.metric("Top-K", info['top_k'])
-    st.metric("عتبة التشابه", f"{info['threshold']}")
-    st.metric("مسار الفهرس", IDX_PATH)
-    st.metric("مسار الميتاداتا", META_PATH)
-    
-    st.markdown("---")
-    
-    # إعدادات التوليد
-    st.subheader("إعدادات التوليد")
-    st.metric("درجة الحرارة", TEMPERATURE)
-    st.metric("عدد المحاولات", MAX_RETRIES)
-    st.metric("عدد الأسئلة", "10 (5 MCQ + 5 TF)")
-    
-    # النموذج المختار
-    if 'selected_model' in st.session_state:
-        model_name = st.session_state.selected_model
-        st.metric("النموذج المختار", model_name)
-        if "llama3.2:3b" in model_name:
-            st.success("LLaMA 3.2:3B")
-        elif "qwen" in model_name.lower():
-            st.success("Qwen 2.5:7B")
-        else:
-            st.info(f"{model_name}")
-    else:
-        st.info("لم يُختر نموذج بعد")
 
-# رفع الملف
+    idx_path, meta_path = get_index_paths()
+
+    st.caption(rag_settings_for_version(get_rag_version())["label"])
+    st.caption(f"التضمين: `{get_model_name()}`")
+
+    if st.session_state.get("selected_model"):
+        st.metric("النموذج المختار", st.session_state.selected_model)
+
 st.subheader("رفع الملف")
+if "selected_model" not in st.session_state:
+    st.warning("اختر نموذجاً من الأعلى.")
 
-# التحقق من اختيار النموذج (مطلوب لـ Vanilla و RAG)
-if 'selected_model' not in st.session_state:
-    st.warning("اختر نموذجاً من الأعلى (Vanilla و RAG).")
-
-up = st.file_uploader("ارفع PDF / DOCX / TXT / MD", type=["pdf","docx","doc","txt","md"])
-
+up = st.file_uploader("ارفع PDF / DOCX / TXT / MD", type=["pdf", "docx", "doc", "txt", "md"])
 if not up:
-    st.info("ارفع ملفاً لإظهار أزرار التوليد: Vanilla / RAG")
+    st.info("ارفع ملفاً لإظهار أزرار التوليد.")
     st.stop()
 
-# حفظ الملف مؤقتاً
 path = os.path.join(UPLOADS, up.name)
 with open(path, "wb") as f:
-    f.write(up.read())
+    f.write(up.getbuffer())
 
-# تحليل الملف
 try:
     raw_text = load_text(path)
     if not raw_text.strip():
         st.error("الملف فارغ أو لا يحتوي على نص")
         st.stop()
-    
     lang = detect_lang(raw_text)
-    text_length = len(raw_text)
-    
-    # استخدام النموذج المختار (إن وُجد — للـ Vanilla/RAG)
     model_name = st.session_state.get("selected_model")
-    
-    # التحقق من حالة النموذج المختار
-    try:
-        import ollama
-        models = ollama.list()
-        installed_models = []
-        
-        if models and hasattr(models, 'models'):
-            if hasattr(models.models, '__iter__'):
-                for model in models.models:
-                    if hasattr(model, 'model'):
-                        installed_models.append(model.model)
-        
-        if model_name in installed_models:
-            st.success(f"النموذج {model_name} مثبت ومتاح")
-        elif model_name:
-            st.warning(f"النموذج {model_name} غير مثبت. سيتم محاولة تحميله عند الاستخدام.")
-            st.info(f"يمكنك تثبيت النموذج باستخدام: `ollama pull {model_name}`")
-        else:
-            st.info("لم يُختر نموذج — اختر LLaMA أو Qwen من الأعلى لتوليد Vanilla/RAG")
-    except Exception as e:
-        st.error(f"خطأ في التحقق من حالة النماذج: {e}")
-    
-    # عرض معلومات الملف
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("اسم الملف", up.name)
-    with col2:
-        st.metric("اللغة المكتشفة", "العربية" if lang == "ar" else "English")
-    with col3:
-        st.metric("طول النص", f"{text_length:,} حرف")
-    with col4:
-        st.metric("النموذج المختار", model_name or "—")
-
 except Exception as e:
     st.error(f"خطأ في قراءة الملف: {e}")
     st.stop()
 
-# أزرار التوليد
+c1, c2 = st.columns(2)
+with c1:
+    st.metric("الملف", up.name)
+with c2:
+    st.metric("اللغة", "العربية" if lang == "ar" else "English")
+
 st.subheader("اختر طريقة التوليد")
-col1, col2 = st.columns(2)
+col_v, col_r = st.columns(2)
 
-with col1:
-    st.markdown("#### توليد Vanilla (بدون RAG)")
-    st.caption("توليد الأسئلة من النص المرفوع فقط")
-    
-    if st.button("توليد أسئلة Vanilla", type="primary", use_container_width=True):
+with col_v:
+    st.markdown("#### Vanilla")
+    st.caption("من النص المرفوع فقط")
+    if st.button("توليد Vanilla", type="primary", use_container_width=True):
         if not model_name:
-            st.error("اختر نموذج LLaMA أو Qwen من الأعلى أولاً")
+            st.error("اختر نموذجاً أولاً.")
         else:
-            try:
-                import ollama
-                models = ollama.list()
-                installed_models = []
-                if models and hasattr(models, 'models') and hasattr(models.models, '__iter__'):
-                    for model in models.models:
-                        if hasattr(model, 'model'):
-                            installed_models.append(model.model)
-                if model_name not in installed_models:
-                    st.info(f"النموذج {model_name} غير موجود. سيتم تحميله تلقائياً...")
-            except Exception as e:
-                st.warning(f"تعذر التحقق من حالة النموذج: {e}")
+            run_vanilla(raw_text, up.name, model_name, lang)
 
-            with st.spinner("جاري توليد الأسئلة..."):
-                try:
-                    prompt = build_prompt_vanilla(raw_text, lang)
-                    start_time = time.time()
-                    response = call_llama(prompt, model_name=model_name, temperature=TEMPERATURE)
-                    generation_time = time.time() - start_time
-                    out = safe_json(response, raw_text, model_name, lang, None)
-                    if out is None:
-                        st.error("فشل في تحليل JSON، سيتم إعادة المحاولة")
-                        out = generate_questions_with_retry(
-                            prompt, max_retries=2, source_text=raw_text,
-                            model_name=model_name, lang=lang, retrieved=None,
-                        )
-                        if out is None:
-                            st.error("فشل في توليد الأسئلة بعد جميع المحاولات")
-                            st.stop()
-                        st.success("تم توليد الأسئلة بنجاح بعد إعادة المحاولة")
-                    if out is None or not isinstance(out, dict) or "mcq" not in out or "tf" not in out:
-                        st.error("خطأ في تنسيق الأسئلة المولدة")
-                        st.code(response)
-                        st.stop()
-                    out["source_text"] = raw_text
-                    out["generation_time"] = generation_time
-                    with st.spinner("جاري حساب المقاييس وحفظ الملف..."):
-                        try:
-                            from src.storage import save_questions_separate_file
-                            filename, num_questions = save_questions_separate_file(
-                                out, model_name, "vanilla", up.name, lang,
-                            )
-                            st.success(f"تم حفظ {num_questions} سؤال في: `{filename}`")
-                        except Exception as e:
-                            st.error(f"خطأ في حفظ الملف المنفصل: {e}")
-                            save_group("A", {
-                                "lang": lang, **out, "source_file": up.name,
-                                "generation_time": generation_time, "method": "vanilla",
-                            })
-                    st.success(f"تم توليد {len(out.get('mcq', []))} MCQ و {len(out.get('tf', []))} صح/خطأ")
-                    st.info(f"وقت التوليد: {generation_time:.2f} ثانية")
-                    st.session_state.vanilla_questions = out
-                    st.session_state.vanilla_generated = True
-                except Exception as e:
-                    st.error(f"خطأ في توليد الأسئلة: {e}")
+with col_r:
+    st.markdown("#### RAG")
+    st.caption("مع استرجاع من المراجع المفهرسة")
+    if not os.path.exists(idx_path):
+        st.warning("فهرس قاعدة المعرفة غير موجود — استخدم «فهرسة قاعدة المعرفة».")
+    elif st.button("توليد RAG", type="primary", use_container_width=True):
+        if not model_name:
+            st.error("اختر نموذجاً أولاً.")
+        else:
+            run_rag(raw_text, up.name, model_name, lang, idx_path, meta_path)
 
-with col2:
-    st.markdown("#### توليد RAG (مع الاسترجاع)")
-    st.caption("توليد الأسئلة مع الاسترجاع من المصادر الخارجية")
-    
-    # التحقق من وجود الفهرس
-    if not os.path.exists(IDX_PATH):
-        st.warning("لم يتم إنشاء فهرس المصادر الخارجية بعد")
-        st.info("يرجى الذهاب إلى صفحة 'فهرسة المراجع' أولاً")
-    else:
-        if st.button("توليد أسئلة RAG", type="primary", use_container_width=True):
-            if not model_name:
-                st.error("اختر نموذج LLaMA أو Qwen من الأعلى أولاً")
-            else:
-                try:
-                    import ollama
-                    models = ollama.list()
-                    installed_models = []
-                    
-                    if models and hasattr(models, 'models'):
-                        if hasattr(models.models, '__iter__'):
-                            for model in models.models:
-                                if hasattr(model, 'model'):
-                                    installed_models.append(model.model)
-                    
-                    if model_name not in installed_models:
-                        st.info(f"النموذج {model_name} غير موجود. سيتم تحميله تلقائياً...")
-                except Exception as e:
-                    st.warning(f"تعذر التحقق من حالة النموذج: {e}")
-                
-                with st.spinner("جاري توليد الأسئلة مع RAG..."):
-                    try:
-                        # فهرسة الملف المرفوع مؤقتاً
-                        chunks = chunk_text(clean_ar(raw_text), CHUNK_SIZE, CHUNK_OVERLAP)
-                        tmp_records = [
-                            {"id": i + 10_000_000, "text": ch, "metadata": {"source": up.name}} 
-                            for i, ch in enumerate(chunks)
-                        ]
-                        build_index("indexes/upload.index", "indexes/upload_meta.jsonl", tmp_records)
-
-                        # استرجاع المقاطع المشابهة (is_query=True للبحث)
-                        st.info("**جاري البحث عن مصادر مشابهة...**")
-                        qv = embed_texts([clean_ar(raw_text)], is_query=True)
-                        D, I = search(IDX_PATH, qv, TOP_K)
-                        meta = load_meta(META_PATH)
-                    
-                        # عرض معلومات التشخيص
-                        st.info(f"**معلومات التشخيص:**")
-                        st.write(f"- عدد النتائج المسترجعة من الفهرس: {len(D) if len(D) > 0 else 0}")
-                        st.write(f"- درجات التشابه: {D.tolist() if len(D) > 0 else 'لا توجد نتائج'}")
-                        st.write(f"- معرفات النتائج: {I.tolist() if len(I) > 0 else 'لا توجد نتائج'}")
-                        st.write(f"- عتبة التشابه المطلوبة: **{SIMILARITY_THRESHOLD}**")
-                    
-                        retrieved = []
-                    
-                        # التحقق من أن النتائج ليست فارغة
-                        if len(D) > 0 and len(I) > 0:
-                            for sc, i in zip(D, I):
-                                if i == -1:
-                                    continue
-                                try:
-                                    sc = float(sc)
-                                    st.write(f"- مقطع {i}: درجة التشابه = {sc:.3f}")
-                                    if sc >= SIMILARITY_THRESHOLD:  # عتبة التشابه
-                                        m = meta.get(int(i), {})
-                                        retrieved.append({
-                                            "text": m.get("text", ""),
-                                            "filename": os.path.basename(m.get("metadata", {}).get("source", "")),
-                                            "score": sc,
-                                            "source_path": m.get("metadata", {}).get("source", "")
-                                        })
-                                        st.success(f"تم قبول المقطع {i} (درجة: {sc:.3f})")
-                                    else:
-                                        st.warning(f"تم رفض المقطع {i} (درجة: {sc:.3f} < {SIMILARITY_THRESHOLD})")
-                                except (ValueError, TypeError) as e:
-                                    st.error(f"خطأ في معالجة المقطع {i}: {e}")
-                                    continue
-
-                        st.info(f"**النتيجة النهائية:** {len(retrieved)} مقطع مقبول من أصل {len(D)}")
-                    
-                        # التحقق من وجود مقاطع مسترجعة قبل المتابعة
-                        if not retrieved:
-                            st.error("**تعذر العثور على مصادر مشابهة**")
-                            st.warning(f"""
-     **لم يتم العثور على مقاطع مشابهة بدرجة كافية**
-
-    **التفاصيل:**
-    - عدد النتائج المسترجعة من الفهرس: {len(D) if len(D) > 0 else 0}
-    - عتبة التشابه المطلوبة: **{SIMILARITY_THRESHOLD}**
-    - جميع المقاطع المسترجعة كانت بدرجة أقل من العتبة المطلوبة
-
-    **الحلول المقترحة:**
-    1. **خفض عتبة التشابه**: يمكنك تغيير العتبة في إعدادات النسخة (حالياً: {SIMILARITY_THRESHOLD})
-    2. **إضافة المزيد من المصادر**: قم بفهرسة المزيد من الملفات في صفحة "فهرسة المراجع"
-    3. **استخدام Vanilla**: يمكنك استخدام طريقة Vanilla التي لا تحتاج إلى مصادر خارجية
-    4. **التحقق من الفهرس**: تأكد من أن الفهرس يحتوي على محتوى ذي صلة بالموضوع
-
-    **ملاحظة:** لن يتم المتابعة بتوليد الأسئلة لأن RAG يحتاج إلى مصادر مشابهة للعمل بشكل صحيح.
-                            """)
-                            st.stop()  # إيقاف العملية تماماً
-                    
-                        st.success(f"تم العثور على {len(retrieved)} مقطع مشابه - جاري المتابعة...")
-
-                        # بناء الـ prompt مع RAG
-                        prompt = build_prompt_rag(raw_text, lang, retrieved)
-                    
-                        # استدعاء النموذج
-                        start_time = time.time()
-                        response = call_llama(prompt, model_name=model_name, temperature=TEMPERATURE)
-                        generation_time = time.time() - start_time
-                    
-                        # عرض الرد الخام للتشخيص
-                        st.info("**الرد الخام من النموذج:**")
-                        with st.expander("عرض الرد الكامل"):
-                            st.code(response, language="text")
-                    
-                        # تحليل الاستجابة مع تمرير raw_text للإصلاح التلقائي
-                        st.info("**تحليل الاستجابة:**")
-                        out = safe_json(response, raw_text, model_name, lang, retrieved)
-                    
-                        if out is None:
-                            st.error("فشل في تحليل JSON، سيتم إعادة المحاولة")
-                            # إعادة المحاولة مع النموذج
-                            out = generate_questions_with_retry(prompt, max_retries=2, source_text=raw_text, 
-                                                                 model_name=model_name, lang=lang, retrieved=retrieved)
-                        
-                            if out is None:
-                                st.error("فشل في توليد الأسئلة بعد جميع المحاولات")
-                                st.stop()
-                            else:
-                                st.success("تم توليد الأسئلة بنجاح بعد إعادة المحاولة")
-                        else:
-                            st.success("تم تحليل JSON بنجاح")
-                    
-                        # التحقق من صحة البيانات
-                        if out is None or not isinstance(out, dict) or "mcq" not in out or "tf" not in out:
-                            st.error("خطأ في تنسيق الأسئلة المولدة")
-                            st.code(response)
-                            st.stop()
-                    
-                        # إضافة مصادر الاسترجاع
-                        out["sources"] = retrieved
-                        out["source_text"] = raw_text
-                        out["generation_time"] = generation_time
-                    
-                        # حفظ في ملف منفصل مع حساب المقاييس
-                        with st.spinner("جاري حساب المقاييس وحفظ الملف..."):
-                            try:
-                                # التحقق من أن model_name صحيح
-                                st.info(f"**معلومات الحفظ:**")
-                                st.write(f"- النموذج: {model_name}")
-                                st.write(f"- الطريقة: rag")
-                                st.write(f"- الملف المصدر: {up.name}")
-                            
-                                from src.storage import save_questions_separate_file
-                                filename, num_questions = save_questions_separate_file(
-                                    out, 
-                                    model_name, 
-                                    "rag", 
-                                    up.name, 
-                                    lang
-                                )
-                                st.success(f"تم حفظ {num_questions} سؤال في: `{filename}`")
-                                st.info(f"المسار الكامل: `outputs/{Path(up.name).stem.replace(' ', '_').replace('.', '_')}/{filename}`")
-                            except Exception as e:
-                                st.error(f"خطأ في حفظ الملف المنفصل: {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
-                                st.info("جاري الحفظ في الملف الشامل...")
-                                # الحفظ العادي كبديل
-                                save_group("B", {
-                                    "lang": lang, 
-                                    **out, 
-                                    "source_file": up.name,
-                                    "generation_time": generation_time,
-                                    "method": "rag",
-                                    "retrieved_sources": len(retrieved)
-                                })
-                    
-                        st.success(f"تم توليد {len(out.get('mcq', []))} أسئلة اختيار من متعدد و {len(out.get('tf', []))} أسئلة صح/خطأ")
-                        st.info(f"وقت التوليد: {generation_time:.2f} ثانية")
-                        st.info(f"تم استرجاع {len(retrieved)} مقطع من المصادر الخارجية")
-                    
-                        # عرض الأسئلة
-                        st.session_state.rag_questions = out
-                        st.session_state.rag_generated = True
-
-                    except Exception as e:
-                        st.error(f"خطأ في توليد الأسئلة: {e}")
-
-# عرض الأسئلة المولدة
-if hasattr(st.session_state, "vanilla_generated") and st.session_state.vanilla_generated:
-    st.subheader("الأسئلة المولدة (Vanilla)")
-    display_questions_with_answers(st.session_state.vanilla_questions)
-
-if hasattr(st.session_state, "rag_generated") and st.session_state.rag_generated:
-    st.subheader("الأسئلة المولدة (RAG)")
-
-    if st.session_state.rag_questions.get("sources"):
-        with st.expander("المصادر المستخدمة في التوليد"):
-            for i, source in enumerate(st.session_state.rag_questions["sources"], 1):
-                st.markdown(
-                    f"**المصدر {i}:** `{source.get('filename', '—')}` — "
-                    f"تشابه {source.get('score', 0):.3f}\n\n"
-                    f"{source.get('text', '')[:200]}..."
+if st.session_state.get("vanilla_generated"):
+    st.subheader("الأسئلة (Vanilla)")
+    display_questions_with_answers(st.session_state.get("vanilla_questions"))
+    ctx = st.session_state.get("vanilla_context") or {}
+    if st.button("حفظ أسئلة Vanilla", type="primary", key="save_vanilla"):
+        out = st.session_state.get("vanilla_questions")
+        if not out or not ctx.get("model_name"):
+            st.error("لا توجد أسئلة للحفظ.")
+        else:
+            with st.spinner("جاري حساب المقاييس وحفظ الملف..."):
+                save_output(
+                    out,
+                    ctx["model_name"],
+                    "vanilla",
+                    ctx["upload_name"],
+                    ctx["lang"],
                 )
+            st.session_state.vanilla_saved = True
+    if st.session_state.get("vanilla_saved"):
+        st.caption("✓ تم الحفظ على القرص.")
 
-    display_questions_with_answers(st.session_state.rag_questions)
+if st.session_state.get("rag_generated"):
+    st.subheader("الأسئلة (RAG)")
+    rag_out = st.session_state.get("rag_questions") or {}
+    sources = rag_out.get("sources") or []
+    if sources:
+        version = get_rag_version()
+        lines = [format_rag_source_line(s, version) for s in sources[:8]]
+        st.markdown("**مصادر RAG:**\n" + "\n".join(lines))
+        if version == "improved" and any("rerank_score" in s for s in sources):
+            st.caption(
+                "«إعادة ترتيب» درجة صلة من Cross-Encoder وليست نسبة تشابه؛ "
+                "المهم ترتيب المقاطع لا القيمة المطلقة."
+            )
+    display_questions_with_answers(rag_out)
+    ctx = st.session_state.get("rag_context") or {}
+    if st.button("حفظ أسئلة RAG", type="primary", key="save_rag"):
+        if not rag_out or not ctx.get("model_name"):
+            st.error("لا توجد أسئلة للحفظ.")
+        else:
+            with st.spinner("جاري حساب المقاييس وحفظ الملف..."):
+                save_output(
+                    rag_out,
+                    ctx["model_name"],
+                    "rag",
+                    ctx["upload_name"],
+                    ctx["lang"],
+                )
+            st.session_state.rag_saved = True
+    if st.session_state.get("rag_saved"):
+        st.caption("✓ تم الحفظ على القرص.")

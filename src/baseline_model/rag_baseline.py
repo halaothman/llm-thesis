@@ -29,7 +29,7 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = BASELINE_
     if not query.strip():
         return []
     
-    # تحويل الاستعلام إلى تضمين (النسخة القديمة لا تميز بين query و passage)
+    # Baseline (e5-large-v2): لا تمييز query/passage — الاستعلام يُضمَّن كـ passage أيضاً
     qv = embed_texts([query])
     
     # البحث في الفهرس

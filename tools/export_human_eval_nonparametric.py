@@ -1,14 +1,19 @@
 """تصدير Mann-Whitney U و rank-biserial وتصحيح Holm من ملفات التقييم البشري CSV إلى outputs/."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import mannwhitneyu
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.nonparametric_stats import effect_magnitude, holm_bonferroni, mann_whitney_u
 
 # --- مسارات ملفات التقييم البشري وملف النتيجة ---
-ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = ROOT / "outputs" / "human_evaluation_nonparametric.csv"
 
 FILES = {
@@ -30,35 +35,6 @@ METRICS = [
     ("جودة الخيارات", "option_quality"),
     ("الدقة", "accuracy"),
 ]
-
-
-def holm_bonferroni(p_values: list[float]) -> list[float]:
-    """تصحيح p-values متعددة الاختبارات بطريقة Holm-Bonferroni."""
-    p = np.asarray(p_values, dtype=float)
-    if len(p) == 0:
-        return []
-    order = np.argsort(p)
-    adjusted_sorted = np.empty(len(p))
-    for i, idx in enumerate(order):
-        adjusted_sorted[i] = (len(p) - i) * p[idx]
-    for i in range(1, len(adjusted_sorted)):
-        adjusted_sorted[i] = max(adjusted_sorted[i], adjusted_sorted[i - 1])
-    adjusted_sorted = np.clip(adjusted_sorted, 0, 1)
-    adjusted = np.empty(len(p))
-    adjusted[order] = adjusted_sorted
-    return adjusted.tolist()
-
-
-def effect_magnitude(r_rb: float) -> str:
-    """تصنيف حجم الأثر حسب rank-biserial."""
-    abs_rb = abs(r_rb)
-    if abs_rb < 0.147:
-        return "Small"
-    if abs_rb < 0.33:
-        return "Medium"
-    if abs_rb < 0.474:
-        return "Large"
-    return "Very large"
 
 
 def load_scores(path: Path, column: str) -> np.ndarray:
@@ -104,23 +80,20 @@ def main() -> None:
                 rows.append(row)
                 continue
 
-            # --- Mann-Whitney بين Vanilla و RAG ---
-            u_stat, p_value = mannwhitneyu(vanilla, rag, alternative="two-sided")
-            r_rb = 1 - (2 * u_stat) / (len(vanilla) * len(rag))
-
+            mw = mann_whitney_u(vanilla, rag)
+            assert mw is not None
             row.update(
                 {
-                    "mannwhitney_u": round(float(u_stat), 4),
-                    "p_raw": round(float(p_value), 4),
-                    "rank_biserial_r_rb": round(float(r_rb), 4),
-                    "effect_magnitude": effect_magnitude(r_rb),
+                    "mannwhitney_u": round(mw["u"], 4),
+                    "p_raw": round(mw["p"], 4),
+                    "rank_biserial_r_rb": round(mw["rb"], 4),
+                    "effect_magnitude": effect_magnitude(mw["rb"], "en"),
                 }
             )
-            p_raw_list.append(float(p_value))
+            p_raw_list.append(mw["p"])
             pending.append(row)
 
-        # --- Holm لكل معايير النموذج ثم إضافة الصفوف ---
-        adjusted = holm_bonferroni(p_raw_list)
+        adjusted = holm_bonferroni(p_raw_list).tolist()
         for row, p_holm in zip(pending, adjusted):
             row["p_holm"] = round(p_holm, 4)
             row["significant_after_holm"] = "Yes" if p_holm < 0.05 else "No"

@@ -1,11 +1,9 @@
+/* ——— Streamlit chrome (إخفاء شريط علوي / deploy) ——— */
 header[data-testid="stHeader"] {
     display: none;
 }
 
-[data-testid="stToolbar"] {
-    display: none;
-}
-
+[data-testid="stToolbar"],
 [data-testid="stDecoration"] {
     display: none;
 }
@@ -22,62 +20,89 @@ footer {
     visibility: hidden;
 }
 
-/* CSS شامل لجميع الصفحات - وضع الشريط الجانبي على اليمين */
-.stApp {
-    direction: rtl;
+[data-testid="stFileUploader"] small {
+    display: none !important;
 }
 
-/* وضع الشريط الجانبي على اليمين */
+/* ——— تخطيط RTL: الشريط الجانبي يمين ——— */
+.stApp {
+    direction: rtl;
+    font-size: 1.0625rem;
+}
+
+.main .block-container {
+    font-size: 1.0625rem;
+    line-height: 1.65;
+}
+
+.main .block-container h1 {
+    font-size: 2.05rem;
+}
+
+.main .block-container h2 {
+    font-size: 1.55rem;
+}
+
+.main .block-container h3 {
+    font-size: 1.28rem;
+}
+
+.main .block-container p,
+.main .block-container li,
+.main .block-container label,
+.main .block-container .stCaption {
+    font-size: 1.0625rem;
+}
+
 .stApp > div:first-child {
     direction: rtl;
     flex-direction: row-reverse;
 }
 
-/* محاذاة الشريط الجانبي */
 .stSidebar {
     direction: rtl;
     text-align: right;
     order: 2;
 }
 
-/* محاذاة المحتوى الرئيسي */
+.stSidebar * {
+    direction: rtl;
+    text-align: right;
+}
+
 .main .block-container {
     direction: rtl;
     text-align: right;
     order: 1;
 }
 
-/* محاذاة عناصر الشريط الجانبي */
-.stSidebar * {
+.stColumns {
+    direction: rtl;
+}
+
+/* ——— نصوص وعناوين ——— */
+.stMarkdown,
+div[data-testid="stMarkdownContainer"],
+h1, h2, h3, h4, h5, h6,
+.stMarkdown h3,
+.stMarkdown h4 {
     direction: rtl;
     text-align: right;
 }
 
-/* محاذاة النصوص الرئيسية */
-.main .block-container {
+.stMarkdown blockquote {
     direction: rtl;
     text-align: right;
 }
 
-/* محاذاة العناصر المختلفة */
-.stMarkdown {
-    direction: rtl;
-    text-align: right;
-}
-
+/* ——— عناصر نماذج ——— */
 .stSelectbox label,
 .stTextInput label,
 .stTextArea label,
-.stFileUploader label {
-    direction: rtl;
-    text-align: right;
-}
-
-[data-testid="stFileUploader"] small {
-    display: none !important;
-}
-
-.stRadio > div {
+.stFileUploader label,
+.stFileUploader,
+.stFileUploader > div,
+.stCheckbox > div > label {
     direction: rtl;
     text-align: right;
 }
@@ -86,153 +111,50 @@ footer {
     direction: rtl;
 }
 
-.stMetric {
-    direction: rtl;
-    text-align: right;
-}
-
-.stDataFrame {
-    direction: rtl;
-}
-
-.stExpander {
-    direction: rtl;
-}
-
-.stAlert {
-    direction: rtl;
-    text-align: right;
-}
-
+/* ——— مقاييس، جداول، تنبيهات ——— */
+.stMetric,
+.stDataFrame,
+.stDataFrame table,
+.stExpander,
+.stAlert,
 .stSuccess,
 .stError,
 .stWarning,
-.stInfo {
-    direction: rtl;
-    text-align: right;
-}
-
-.stProgress {
-    direction: rtl;
-}
-
+.stInfo,
+.stProgress,
 .stSpinner {
     direction: rtl;
+    text-align: right;
 }
 
-/* محاذاة الجداول */
-.stDataFrame table {
+.streamlit-expanderHeader,
+.streamlit-expanderContent {
     direction: rtl;
     text-align: right;
 }
 
-/* محاذاة الأعمدة */
-.stColumns {
-    direction: rtl;
+/* أكواد (LTR) */
+.stCode {
+    direction: ltr;
+    text-align: left;
 }
 
-/* محاذاة النصوص في العناصر */
-div[data-testid="stMarkdownContainer"] {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة العناوين */
-h1, h2, h3, h4, h5, h6 {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص في الـ sidebar */
-.css-1d391kg {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة خيارات الأسئلة لليمين */
-.stRadio > div {
-    direction: rtl;
-    text-align: right;
-}
-
-.stRadio > div > label {
-    direction: rtl;
-    text-align: right;
-    justify-content: flex-start;
-}
-
-.stRadio > div > label > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص داخل الخيارات */
-.stRadio > div > label > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة الأزرار الدائرية */
-.stRadio > div > label > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص في الخيارات */
-.stRadio > div > label > div > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة إضافية لخيارات الأسئلة */
-div[data-testid="stRadio"] {
-    direction: rtl;
-    text-align: right;
-}
-
+/* ——— Radio (محاذاة + بطاقات اختيار) ——— */
+.stRadio > div,
+div[data-testid="stRadio"],
 div[data-testid="stRadio"] > div {
     direction: rtl;
     text-align: right;
-}
-
-div[data-testid="stRadio"] > div > label {
-    direction: rtl;
-    text-align: right;
-    justify-content: flex-start;
-}
-
-/* محاذاة النصوص في الخيارات */
-div[data-testid="stRadio"] > div > label > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة الأزرار الدائرية */
-div[data-testid="stRadio"] > div > label > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص في الخيارات */
-div[data-testid="stRadio"] > div > label > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص في الخيارات */
-div[data-testid="stRadio"] > div > label > div > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* تحسين عرض خيارات الأسئلة - كل خيار على سطر منفصل */
-.stRadio > div {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.stRadio > div > label {
+.stRadio > div > label,
+div[data-testid="stRadio"] > div > label {
+    direction: rtl;
+    text-align: right;
+    justify-content: flex-start;
     display: block;
     margin-bottom: 8px;
     padding: 8px;
@@ -242,77 +164,23 @@ div[data-testid="stRadio"] > div > label > div > div > div > div {
     transition: background-color 0.2s;
 }
 
-.stRadio > div > label:hover {
-    background-color: #f0f0f0;
-}
-
-.stRadio > div > label > div {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* محاذاة النصوص في الخيارات */
-.stRadio > div > label > div > div {
-    direction: rtl;
-    text-align: right;
-    flex: 1;
-}
-
-/* تحسين الأزرار الدائرية */
-.stRadio > div > label > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص في الخيارات */
-.stRadio > div > label > div > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* تحسين إضافي لخيارات الأسئلة */
-div[data-testid="stRadio"] > div {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-div[data-testid="stRadio"] > div > label {
-    display: block;
-    margin-bottom: 8px;
-    padding: 8px;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    background-color: #f9f9f9;
-    transition: background-color 0.2s;
-}
-
+.stRadio > div > label:hover,
 div[data-testid="stRadio"] > div > label:hover {
     background-color: #f0f0f0;
 }
 
+.stRadio > div > label > div,
 div[data-testid="stRadio"] > div > label > div {
     display: flex;
     align-items: center;
     gap: 8px;
+    direction: rtl;
+    text-align: right;
 }
 
-/* محاذاة النصوص في الخيارات */
+.stRadio > div > label > div > div,
 div[data-testid="stRadio"] > div > label > div > div {
     direction: rtl;
     text-align: right;
     flex: 1;
-}
-
-/* محاذاة الأزرار الدائرية */
-div[data-testid="stRadio"] > div > label > div > div > div {
-    direction: rtl;
-    text-align: right;
-}
-
-/* محاذاة النصوص في الخيارات */
-div[data-testid="stRadio"] > div > label > div > div > div > div {
-    direction: rtl;
-    text-align: right;
 }

@@ -1,25 +1,7 @@
 """حساب المقاييس الآلية: BLEU و BERTScore و Perplexity و F1 وغيرها على الأسئلة."""
-import numpy as np
-import pandas as pd
-from .embeddings import embed_texts
-import re
-from collections import Counter
 import math
+import re
 
-def cosine(a, b):
-    """حساب التشابه الدلالي باستخدام cosine similarity"""
-    a = a / np.linalg.norm(a)
-    b = b / np.linalg.norm(b)
-    return float(np.dot(a, b))
-
-def semantic_scores(questions, base_text):
-    """حساب درجات التشابه الدلالي للأسئلة مع النص الأساسي"""
-    qv = embed_texts(questions)
-    bv = embed_texts([base_text])[0]
-    sims = [float(np.dot(v, bv)) for v in qv]  # normalized => cosine
-    # ممكن نعرّف relevance = sims نفسها أو نأخذ متوسط top-k ضمن النص الأصلي
-    relevance = sims
-    return sims, relevance
 
 def perplexity_list(texts, lang):
     """حساب perplexity للنصوص باستخدام نماذج خفيفة"""
@@ -74,12 +56,6 @@ def perplexity_list(texts, lang):
         print(f"خطأ في تحميل النموذج: {e}")
         return [0.0] * len(texts)
 
-def normalize_by_count(values, count):
-    """تطبيع القيم حسب العدد"""
-    if not values:
-        return values
-    arr = np.array(values, dtype=float)
-    return (arr / max(count, 1)).tolist()
 
 def tokenize_arabic(text):
     """تقسيم النص العربي إلى كلمات"""
@@ -213,22 +189,6 @@ def calculate_precision_recall_f1(candidate, reference, lang="ar"):
         print(f"خطأ في حساب Precision/Recall/F1: {e}")
         return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
-def calculate_difficulty(question_text, lang="ar"):
-    """تحديد مستوى صعوبة السؤال"""
-    try:
-        tokens = tokenize_text(question_text, lang)
-        word_count = len(tokens)
-        
-        # معايير بسيطة لتحديد الصعوبة
-        if word_count <= 5:
-            return "easy"
-        elif word_count <= 10:
-            return "medium"
-        else:
-            return "hard"
-    except Exception:
-        return "medium"
-
 def calculate_all_metrics(question_text, source_text, lang="ar"):
     """حساب جميع المقاييس للسؤال"""
     # التأكد من وجود النصوص
@@ -240,7 +200,6 @@ def calculate_all_metrics(question_text, source_text, lang="ar"):
             "recall": 0.0,
             "f1_score": 0.0,
             "perplexity": 0.0,
-            "difficulty": "medium"
         }
     
     metrics = {
@@ -250,7 +209,6 @@ def calculate_all_metrics(question_text, source_text, lang="ar"):
         "recall": 0.0,
         "f1_score": 0.0,
         "perplexity": 0.0,
-        "difficulty": "medium"
     }
     
     print(f"حساب المقاييس للسؤال: {question_text[:50]}...")
@@ -307,14 +265,6 @@ def calculate_all_metrics(question_text, source_text, lang="ar"):
         except Exception as e:
             print(f"خطأ في حساب Perplexity: {e}")
             metrics["perplexity"] = 0.0  # التأكد من وجود قيمة افتراضية
-        
-        # تحديد الصعوبة
-        try:
-            difficulty = calculate_difficulty(question_text, lang)
-            metrics["difficulty"] = difficulty
-            print(f"Difficulty: {difficulty}")
-        except Exception as e:
-            print(f"خطأ في حساب الصعوبة: {e}")
         
         print(f"النتيجة النهائية: {metrics}")
         return metrics

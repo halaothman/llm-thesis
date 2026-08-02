@@ -4,7 +4,6 @@
 - SIMILARITY_THRESHOLD: 0.65
 - نموذج التضمين: AraBERT
 - Re-ranking: Cross-Encoder
-- Metadata محسّن: صفحة، فقرة، سياق
 """
 import os
 import numpy as np
@@ -21,7 +20,7 @@ USE_RERANKING = True  # تفعيل/تعطيل Re-ranking
 def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_TOP_K, thr: float = IMPROVED_THRESHOLD, use_reranking: bool = USE_RERANKING):
     """
     استرجاع المقاطع المشابهة من الفهرس - Improved (النسخة المحسّنة)
-    مع Re-ranking و Metadata محسّن
+    مع Re-ranking
     
     Args:
         index_path: مسار ملف الفهرس
@@ -32,7 +31,7 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
         use_reranking: استخدام Re-ranking (افتراضي: True)
     
     Returns:
-        list: قائمة المقاطع المسترجعة مع metadata محسّن
+        list: قائمة المقاطع المسترجعة (text, filename, score, id, metadata)
     """
     if not query.strip():
         return []
@@ -74,26 +73,14 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
         if score >= thr:
             metadata = meta.get(int(idx), {})
             meta_dict = metadata.get("metadata", {})
-            
-            # بناء metadata محسّن
-            enhanced_metadata = {
-                "source": meta_dict.get("source", ""),
-                "chunk_index": meta_dict.get("chunk_index", -1),
-                "chunk_position": meta_dict.get("chunk_position", {}),
-                "page": meta_dict.get("page", None),
-                "paragraph": meta_dict.get("paragraph", None),
-                "context": meta_dict.get("context", ""),
-                "file_type": meta_dict.get("file_type", ""),
-                "indexed_at": meta_dict.get("indexed_at", ""),
-            }
-            
+            meta_dict = {k: v for k, v in meta_dict.items() if k != "chunk_index"}
+            source = meta_dict.get("source", "")
             results.append({
                 "text": metadata.get("text", ""),
-                "filename": os.path.basename(meta_dict.get("source", "")) if meta_dict.get("source") else "",
+                "filename": os.path.basename(source) if source else "",
                 "score": score,
                 "id": int(idx),
-                "metadata": enhanced_metadata,
-                "original_metadata": meta_dict  # للتوافق مع الكود القديم
+                "metadata": meta_dict,
             })
     
     # تطبيق Re-ranking إذا كان مفعلاً

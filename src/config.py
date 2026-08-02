@@ -5,7 +5,7 @@ import os
 
 # تحديد النسخة المستخدمة
 # القيم الممكنة: "baseline" أو "improved"
-RAG_VERSION = os.getenv("RAG_VERSION", "improved")  # افتراضي: improved
+RAG_VERSION = os.getenv("RAG_VERSION", "baseline")  # افتراضي: baseline
 
 def get_rag_version():
     """الحصول على النسخة المحددة"""
@@ -19,14 +19,6 @@ def set_rag_version(version: str):
         os.environ["RAG_VERSION"] = version
     else:
         raise ValueError(f"النسخة يجب أن تكون 'baseline' أو 'improved'، حصلت: {version}")
-
-def is_baseline():
-    """التحقق من استخدام Baseline"""
-    return RAG_VERSION == "baseline"
-
-def is_improved():
-    """التحقق من استخدام Improved"""
-    return RAG_VERSION == "improved"
 
 def get_index_paths():
     """

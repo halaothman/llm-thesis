@@ -19,4 +19,9 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = None, thr
     يستخدم الإعدادات الافتراضية للنسخة المحددة
     """
     module = _get_rag_module()
-    return module.retrieve(index_path, meta_path, query, top_k, thr)
+    kwargs = {}
+    if top_k is not None:
+        kwargs["top_k"] = top_k
+    if thr is not None:
+        kwargs["thr"] = thr
+    return module.retrieve(index_path, meta_path, query, **kwargs)

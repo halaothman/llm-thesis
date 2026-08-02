@@ -2,8 +2,6 @@
 Re-ranking للنسخة المحسّنة باستخدام Cross-Encoder
 """
 from sentence_transformers import CrossEncoder
-import numpy as np
-
 # متغير عام لحفظ النموذج
 _reranker = None
 
@@ -34,7 +32,7 @@ def rerank(query: str, passages: list[dict], top_k: int = None):
         top_k: عدد النتائج المطلوبة بعد إعادة الترتيب (إذا كان None، يُرجع جميع النتائج)
     
     Returns:
-        list: قائمة المقاطع المعاد ترتيبها
+        list: قائمة المقاطع مرتبة حسب درجة Cross-Encoder فقط
     """
     if not passages or not query.strip():
         return passages
@@ -50,23 +48,17 @@ def rerank(query: str, passages: list[dict], top_k: int = None):
         
         # حساب درجات Re-ranking
         rerank_scores = reranker.predict(pairs)
-        
-        # دمج الدرجات الأصلية مع درجات Re-ranking
-        # يمكن استخدام متوسط مرجح أو درجات Re-ranking فقط
+
         for i, passage in enumerate(passages):
-            original_score = passage.get("score", 0.0)
+            faiss_score = float(passage.get("score", 0.0))
             rerank_score = float(rerank_scores[i])
-            
-            # استخدام متوسط مرجح (70% re-ranking, 30% original)
-            # أو يمكن استخدام re-ranking فقط
-            combined_score = 0.7 * rerank_score + 0.3 * original_score
-            
+            passage["original_score"] = faiss_score
             passage["rerank_score"] = rerank_score
-            passage["combined_score"] = combined_score
-            passage["original_score"] = original_score
-        
-        # ترتيب المقاطع بناءً على combined_score
-        passages_sorted = sorted(passages, key=lambda x: x.get("combined_score", 0.0), reverse=True)
+            passage["score"] = rerank_score
+
+        passages_sorted = sorted(
+            passages, key=lambda x: x.get("rerank_score", 0.0), reverse=True
+        )
         
         # إرجاع top_k إذا كان محدداً
         if top_k is not None and top_k > 0:

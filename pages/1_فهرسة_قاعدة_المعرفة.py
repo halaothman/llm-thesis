@@ -1,15 +1,17 @@
-"""صفحة فهرسة المراجع: تقسيم النص وبناء فهرس FAISS من data-sources."""
+"""صفحة فهرسة قاعدة المعرفة: تقسيم النص وبناء فهرس FAISS من data-sources."""
 import os
 import sys
 import time
 import uuid
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import streamlit as st
 
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-st.set_page_config(page_title="فهرسة المراجع", layout="wide")
+st.set_page_config(page_title="فهرسة قاعدة المعرفة", layout="wide")
 
 try:
     from src.loaders import load_text
@@ -20,21 +22,11 @@ except ImportError as e:
     st.error(f"خطأ في استيراد الوحدات: {e}")
     st.stop()
 
-try:
-    with open(os.path.join(project_root, "style.css"), "r", encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except FileNotFoundError:
-    st.markdown(
-        """
-    <style>
-        .stApp { direction: rtl; }
-        .main .block-container { direction: rtl; text-align: right; }
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
+from src.ui_styles import inject_app_styles
 
-st.title("فهرسة المراجع الخارجية (RAG)")
+inject_app_styles()
+
+st.title("فهرسة قاعدة المعرفة (RAG)")
 
 DATA_DIR = "data-sources"
 os.makedirs("indexes", exist_ok=True)
@@ -49,7 +41,6 @@ def _records_for_file(path: str, f: str) -> list[dict]:
     if not text.strip():
         return []
 
-    file_size = len(text.encode("utf-8")) / 1024
     text = clean_ar(text)
     stemmed = stem_ar(text)
     chunks = chunk_text(stemmed, 500, 100)
@@ -64,7 +55,6 @@ def _records_for_file(path: str, f: str) -> list[dict]:
             "source": path,
             "filename": f,
             "chunk_size": len(ch),
-            "file_size_kb": file_size,
         }
         if is_improved:
             chunk_start = chunk_idx * (500 - 100)
@@ -73,7 +63,6 @@ def _records_for_file(path: str, f: str) -> list[dict]:
             context_after = text[chunk_end : min(chunk_end + 100, len(text))]
             metadata.update(
                 {
-                    "chunk_index": chunk_idx,
                     "chunk_position": {
                         "start": chunk_start,
                         "end": chunk_end,
@@ -138,12 +127,12 @@ with col3:
 
 st.subheader("عمليات الفهرسة")
 st.caption(
-    "زر **فهرسة المراجع** يمسح الفهرس الحالي ويعيد بناءه من كل الملفات في `data-sources/`."
+    "زر **فهرسة قاعدة المعرفة** يمسح الفهرس الحالي ويعيد بناءه من كل الملفات في `data-sources/`."
 )
 
 btn_col1, btn_col2 = st.columns(2)
 with btn_col1:
-    run_index = st.button("فهرسة المراجع", type="primary", use_container_width=True)
+    run_index = st.button("فهرسة قاعدة المعرفة", type="primary", use_container_width=True)
 with btn_col2:
     clear_index_btn = st.button("مسح الفهرس", type="secondary", use_container_width=True)
 

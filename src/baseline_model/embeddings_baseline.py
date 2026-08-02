@@ -29,7 +29,7 @@ def get_model():
 def embed_texts(texts: list[str]) -> np.ndarray:
     """
     تحويل النصوص إلى تضمينات - Baseline
-    (لا يوجد تمييز بين query و passage في النسخة القديمة)
+    Baseline / e5-large-v2: لا تمييز بين query و passage في هذه الدالة.
     
     Args:
         texts: قائمة النصوص المراد تحويلها
@@ -42,7 +42,7 @@ def embed_texts(texts: list[str]) -> np.ndarray:
     
     model = get_model()
     
-    # إضافة "passage: " حسب إرشادات نموذج e5 (النسخة القديمة)
+    # e5-large-v2 (Baseline): بادئة passage: للمقاطع (نفس التنسيق للاستعلام هنا)
     formatted_texts = [f"passage: {text}" for text in texts]
     
     # تحويل النصوص إلى تضمينات

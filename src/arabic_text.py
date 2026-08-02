@@ -1,5 +1,6 @@
 """تنظيف النص العربي و stemming لتحسين الفهرسة والاسترجاع."""
 import re
+import unicodedata
 from nltk.stem.snowball import SnowballStemmer
 
 # تهيئة الـ stemmer العربي
@@ -21,7 +22,9 @@ def clean_ar(text: str) -> str:
     """
     if not text:
         return ""
-    
+
+    text = unicodedata.normalize("NFKC", text)
+
     # إزالة التشكيل
     text = _AR_DIAC.sub("", text)
     
