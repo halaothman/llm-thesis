@@ -20,11 +20,10 @@ from edu_question_generator.generator import QuestionType, detect_lang
 from edu_question_generator.loaders import load_text
 from edu_question_generator.pipeline import generate_from_document
 
-DIFFICULTY = "Hard"
+DIFFICULTY = "Hard"  # مستوى الصعوبة الافتراضي
 QUESTION_TYPES: list[QuestionType] = ["mcq"]
-MATH_FOCUS = True
-DL_FOCUS = True
 
+# CSS مخصّص لتبويب Edu في app.py
 _EDU_STYLES = """
 <style>
 .edu-qg .main-title { font-size: 2.15rem; font-weight: 700; margin-bottom: 0.25rem; text-align: center; }
@@ -54,6 +53,7 @@ _EDU_STYLES = """
 </style>
 """
 
+# مراحل pipeline المعروضة للمستخدم
 _PIPELINE_PHASES: list[tuple[str, str]] = [
     ("extract", "استخراج النص من الملف"),
     ("chunk", "تقسيم المستند"),
@@ -66,6 +66,7 @@ _PIPELINE_PHASES: list[tuple[str, str]] = [
 
 
 def _read_secret(name: str) -> str | None:
+    """قراءة سر من st.secrets ثم متغير البيئة."""
     try:
         value = st.secrets[name]
         if value is None:
@@ -82,10 +83,12 @@ def _read_secret(name: str) -> str | None:
 
 
 def get_deepseek_api_key() -> str | None:
+    """مفتاح DeepSeek للتوليد."""
     return _read_secret("DEEPSEEK_API_KEY")
 
 
 def _init_edu_state() -> None:
+    """تهيئة session_state لتبويب Edu."""
     defaults = {
         "edu_questions_df": None,
         "edu_last_filename": None,
@@ -97,6 +100,7 @@ def _init_edu_state() -> None:
 
 
 def _stage_phase_key(stage: str) -> str:
+    """ربط stage داخلي بمرحلة العرض (extract/chunk/generate/…)."""
     if stage == "extract_done":
         return "extract"
     if stage == "chunking":
@@ -115,6 +119,7 @@ def _stage_phase_key(stage: str) -> str:
 
 
 def pipeline_status_headline(stage: str, data: dict) -> str:
+    """عنوان شريط الحالة أثناء التوليد."""
     del data
     labels = dict(_PIPELINE_PHASES)
     phase = _stage_phase_key(stage)
@@ -125,6 +130,7 @@ def pipeline_status_headline(stage: str, data: dict) -> str:
 
 
 def _render_phase_checklist(completed: set[str], current: str) -> str:
+    """HTML لقائمة مراحل pipeline (✓ / ▸ / ○)."""
     rows: list[str] = []
     for key, label in _PIPELINE_PHASES:
         if key in completed:
@@ -141,6 +147,7 @@ def _render_phase_checklist(completed: set[str], current: str) -> str:
 
 
 def make_pipeline_progress_ui():
+    """إنشاء callback تقدم + شريط progress لـ st.status."""
     completed_phases: set[str] = set()
     current_phase = "extract"
     log_box = st.empty()
@@ -186,6 +193,7 @@ def make_pipeline_progress_ui():
 
 
 def _render_provider_status() -> None:
+    """تحذير عند غياب DEEPSEEK_API_KEY."""
     if get_deepseek_api_key():
         return
     st.markdown(
@@ -197,6 +205,7 @@ def _render_provider_status() -> None:
 
 
 def _rtl_markdown(content: str) -> None:
+    """Markdown بمحاذاة RTL."""
     st.markdown(
         f'<div class="rtl-block">{content}</div>',
         unsafe_allow_html=True,
@@ -204,6 +213,7 @@ def _rtl_markdown(content: str) -> None:
 
 
 def _render_questions(df) -> None:
+    """عرض جدول الأسئلة في بطاقات."""
     type_labels = {
         "MCQ": "اختيار من متعدد",
         "True/False": "صح / خطأ",
@@ -248,7 +258,7 @@ def render_edu_app() -> None:
     st.markdown('<div class="edu-qg">', unsafe_allow_html=True)
 
     st.markdown(
-        '<div class="main-title">📝 Edu Question Generator (DeepSeek)</div>',
+        '<div class="main-title">📝 Edu Question Generator (DeepSeek R1)</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -308,10 +318,7 @@ def render_edu_app() -> None:
                         difficulty=DIFFICULTY,
                         types=QUESTION_TYPES,
                         model="",
-                        provider="deepseek",
                         api_key=api_key,
-                        math_focus=MATH_FOCUS,
-                        dl_focus=DL_FOCUS,
                         progress_callback=on_pipeline_progress,
                     )
                 except RuntimeError as exc:
@@ -338,7 +345,7 @@ def render_edu_app() -> None:
                         st.error("تعذّر توليد الأسئلة. حاول لاحقاً.")
                     st.stop()
                 except json.JSONDecodeError:
-                    run_status.update(label="فشل — JSON", state="error")
+                    run_status.update(label="فشل قراءة النتيجة", state="error")
                     st.error(
                         "تعذّر قراءة نتيجة التوليد. "
                         "جرّب مرة أخرى."

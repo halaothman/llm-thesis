@@ -1,18 +1,22 @@
+"""كشف أسئلة «حفظ رقم» من المصدر دون اشتقاق حقيقي."""
 from __future__ import annotations
 
 import re
 
+# تحويل الأرقام العربية الهندية إلى لاتينية
 _ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 
+# مطابقة أعداد صحيحة أو عشرية (مع فواصل آلاف)
 _NUMBER_TOKEN = re.compile(r"(?<!\w)([\d]{1,3}(?:[,،][\d]{3})+|[\d]+(?:[.][\d]+)?)(?!\w)")
 
 
 def normalize_digits(text: str) -> str:
+    """توحيد الأرقام العربية/اللاتينية في النص."""
     return str(text or "").translate(_ARABIC_DIGITS)
 
 
 def extract_numbers(text: str, *, min_value: int = 4) -> set[int]:
-    """Integers found in text (skip 0–3 to reduce label noise)."""
+    """استخراج الأعداد من النص (تجاهل 0–3 لتقليل ضجيج التسميات)."""
     normalized = normalize_digits(text)
     found: set[int] = set()
     for match in _NUMBER_TOKEN.finditer(normalized):
@@ -30,6 +34,7 @@ def extract_numbers(text: str, *, min_value: int = 4) -> set[int]:
 
 
 def parse_primary_number(text: str) -> int | None:
+    """أول عدد ظاهر في النص (غالباً إجابة MCQ)."""
     normalized = normalize_digits(str(text or "").strip())
     match = _NUMBER_TOKEN.search(normalized)
     if not match:
@@ -44,10 +49,12 @@ def parse_primary_number(text: str) -> int | None:
 
 
 def question_numbers(text: str) -> set[int]:
+    """أعداد السؤال (حد أدنى 4)."""
     return extract_numbers(text, min_value=4)
 
 
 def looks_like_multistep_solution(solution: str) -> bool:
+    """هل الحل يبدو اشتقاقاً متعدد الخطوات (وليس نسخ رقم)؟"""
     sol = normalize_digits(str(solution or "").strip())
     if len(sol) < 30:
         return False
@@ -61,7 +68,7 @@ def looks_like_multistep_solution(solution: str) -> bool:
 
 
 def is_numeric_recall_from_source(item: dict, source: str) -> bool:
-    """Reject when the keyed answer is a number copied from the source without real derivation."""
+    """رفض سؤال إذا كانت إجابته رقماً منسوخاً من المصدر بلا اشتقاق."""
     if not source.strip():
         return False
 

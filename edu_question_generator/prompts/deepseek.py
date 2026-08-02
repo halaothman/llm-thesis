@@ -1,7 +1,17 @@
+"""Prompt كامل لـ DeepSeek R1: امتحان جامعي MCQ صعب من جزء المستند."""
 from __future__ import annotations
 
-from ._shared import LANGUAGE_RULES_AR, Difficulty
+from typing import Literal
 
+Difficulty = Literal["Easy", "Medium", "Hard"]
+
+LANGUAGE_RULES_AR = """
+- استخدم العربية الفصحى مع مصطلحات تقنية إنجليزية شائعة فقط (مثل CNN, Attention, FLOPs)
+- ممنوع تماماً: الأحرف الصينية أو اليابانية أو الكورية أو أي رموز غريبة
+- مسموح فقط: العربية، الإنجليزية، الأرقام، وعلامات رياضية شائعة (+ - × ÷ = ^ / ( ) [ ] %)
+"""
+
+# قواعد مستوى التفكير المعرفي (تحليل + حساب multi-step، منع الحفظ الميكانيكي)
 _COGNITIVE_LEVEL_BLOCK = """
 ========================
 دورك ومستوى التفكير
@@ -30,7 +40,7 @@ _COGNITIVE_LEVEL_BLOCK = """
 لا تكتب سلسلة تفكير — **JSON فقط**.
 """
 
-
+# تجريد أسماء الدوال/المتغيرات من الكود في صياغة الأسئلة
 _CODE_ABSTRACTION_BLOCK = """
 ========================
 تجريد الكود (السؤال والخيارات والحل)
@@ -54,6 +64,7 @@ _CODE_ABSTRACTION_BLOCK = """
 
 
 def _deepseek_output_format_section(context: str, difficulty: Difficulty) -> str:
+    """قسم صيغة JSON العربية مع حقل type و difficulty."""
     diff_json = "hard" if difficulty == "Hard" else "medium | hard"
     return f"""حلّل المحتوى داخلياً دون طباعة التحليل، ثم أخرج الأسئلة **فقط** بصيغة JSON دون أي نص خارج JSON.
 
@@ -85,6 +96,7 @@ def build_deepseek_prompt(
     difficulty: Difficulty,
     num_questions: int | None = None,
 ) -> str:
+    """تجميع prompt المستخدم الكامل لطلب توليد MCQ من مقطع واحد."""
     count_line = (
         f"أخرج **بالضبط {num_questions}** سؤال MCQ من هذا الجزء فقط — لا أكثر ولا أقل."
         if num_questions
@@ -152,3 +164,22 @@ MCQ: أربعة خيارات، مشتتات منطقية، `solution` قصير �
 ========================
 
 {_deepseek_output_format_section(context, difficulty)}"""
+
+
+SYSTEM_MESSAGES = {
+    "en": (
+        "University final exam MCQs in Arabic: mix analysis/application (why, what-if) "
+        "with multi-step computation (understand then calculate). "
+        "No mechanical subtraction-only items; confident short solutions. JSON only."
+    ),
+    "ar": (
+        "أنت عضو هيئة تدريس تعد امتحاناً نهائياً. "
+        "مزيج: تحليل/تطبيق (لماذا، ماذا لو) + حساب multi-step (فهم ثم حساب) — "
+        "لا طرح ميكانيكي ولا solution متردد. JSON فقط."
+    ),
+}
+
+
+def build_deepseek_system_message(lang: str) -> str:
+    """رسالة system لـ DeepSeek R1."""
+    return SYSTEM_MESSAGES["ar" if lang == "ar" else "en"]

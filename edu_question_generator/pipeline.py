@@ -1,10 +1,10 @@
-"""Universal document-to-questions pipeline.
+"""Pipeline كامل: مستند → مقاطع → توليد → دمج → تحقق → اختيار.
 
-Strategy:
-1. Extract text from the uploaded file.
-2. Split into logical segments (headings / topics), capped at MAX_LOGICAL_SEGMENTS.
-3. Generate a fixed total question budget distributed across segments.
-4. Merge, dedupe, validate, then cap to TARGET_QUESTIONS_TOTAL with type diversity.
+الاستراتيجية:
+1. استخراج النص
+2. تقسيم منطقي (عناوين) بحد MAX_LOGICAL_SEGMENTS
+3. توزيع ميزانية الأسئلة على المقاطع
+4. دمج، إزالة تكرار، تحقق، ثم cap إلى TARGET_QUESTIONS_TOTAL
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any
 
 from .chunking import build_logical_segments
 from .config import (
-    DEFAULT_DEEPSEEK_MODEL,
+    DEEPSEEK_R1_MODEL,
     LLM_INSUFFICIENT_BALANCE,
     LLM_LIMIT_ERROR,
     LLM_REQUEST_TOO_LARGE,
@@ -28,17 +28,15 @@ from .config import (
     TARGET_QUESTIONS_TOTAL,
 )
 from .generator import Difficulty, Lang, QuestionType, generate_questions
-from .question_selection import cap_payload, distribute_question_counts
-from .validator import filter_payload
+from .question_selection import cap_and_diversify_mcq, distribute_question_counts
+from .validator import filter_mcq_payload
 
-PipelineProgressCallback = Callable[[str, dict[str, Any]], None]
+PipelineProgressCallback = Callable[[str, dict[str, Any]], None]  # (stage, بيانات تقدم)
 
 
-def _resolve_model_id(provider: str, model: str) -> str:
-    del provider
-    if model:
-        return model
-    return DEFAULT_DEEPSEEK_MODEL
+def _resolve_model_id(model: str) -> str:
+    """معرّف نموذج R1 (افتراضي من config)."""
+    return model or DEEPSEEK_R1_MODEL
 
 
 def _emit_progress(
@@ -46,11 +44,13 @@ def _emit_progress(
     stage: str,
     **payload: Any,
 ) -> None:
+    """إبلاغ الواجهة بمرحلة pipeline."""
     if callback is not None:
         callback(stage, payload)
 
 
 def sample_segments(segments: list[str], max_segments: int) -> list[str]:
+    """أخذ عينة متباعدة من المقاطع (غير مستخدم حالياً في المسار الرئيسي)."""
     if len(segments) <= max_segments:
         return segments
     if max_segments <= 0:
@@ -71,6 +71,7 @@ def sample_segments(segments: list[str], max_segments: int) -> list[str]:
 
 
 def _question_key(item: dict) -> str:
+    """مفتاح إزالة تكرار MCQ (نص + خيارات)."""
     question = re.sub(r"\s+", " ", str(item.get("q", "")).strip().lower())
     options = "|".join(
         re.sub(r"\s+", " ", str(option).strip().lower())
@@ -80,6 +81,7 @@ def _question_key(item: dict) -> str:
 
 
 def dedupe_payload(payload: dict) -> dict:
+    """إزالة أسئلة مكررة داخل payload."""
     deduped = {"mcq": [], "tf": [], "short": []}
     seen_mcq: set[str] = set()
 
@@ -103,6 +105,7 @@ def dedupe_payload(payload: dict) -> dict:
 
 
 def merge_payloads(payloads: list[dict]) -> dict:
+    """دمج نتائج المقاطع ثم dedupe."""
     merged = {"mcq": [], "tf": [], "short": []}
     for payload in payloads:
         for key in merged:
@@ -120,11 +123,9 @@ def _generate_segment_payload(
     types: list[QuestionType],
     num_questions: int | None,
     model: str,
-    provider: str,
     api_key: str | None,
-    math_focus: bool,
-    dl_focus: bool,
 ) -> dict | None:
+    """توليد من مقطع واحد؛ None عند فشل تحليل الرد أو طلب كبير."""
     if num_questions == 0:
         return {"mcq": [], "tf": [], "short": []}
     try:
@@ -135,10 +136,7 @@ def _generate_segment_payload(
             types,
             num_questions,
             model,
-            provider,
             api_key,
-            math_focus,
-            dl_focus,
         )
     except json.JSONDecodeError:
         return None
@@ -158,15 +156,13 @@ def generate_from_document(
     types: list[QuestionType],
     num_questions: int | None = None,
     model: str = "",
-    provider: str = "deepseek",
     api_key: str | None = None,
-    math_focus: bool = False,
-    dl_focus: bool = False,
     *,
     progress_callback: PipelineProgressCallback | None = None,
     target_questions: int | None = None,
     target_computation_min: int | None = None,
 ) -> tuple[dict, dict]:
+    """نقطة الدخول: مستند كامل → payload نهائي + metadata تشغيل."""
     question_budget = (
         target_questions
         if target_questions is not None
@@ -211,10 +207,7 @@ def generate_from_document(
 
     payloads: list[dict] = []
     segments_skipped = 0
-    active: dict[str, object] = {
-        "provider": provider,
-        "api_key": api_key,
-    }
+    model_id = _resolve_model_id(model)
 
     per_segment_counts = distribute_question_counts(question_budget, len(segments))
     segment_jobs = list(zip(segments, per_segment_counts))
@@ -224,14 +217,11 @@ def generate_from_document(
     for job_index, (segment, segment_count) in enumerate(segment_jobs, start=1):
         if segment_count <= 0:
             continue
-        active_provider = str(active["provider"])
-        model_id = _resolve_model_id(active_provider, model)
         _emit_progress(
             progress_callback,
             "segment_llm_start",
             index=job_index,
             total=total_jobs,
-            provider=active_provider,
             model=model_id,
             segment_chars=len(segment),
             segment_questions=segment_count,
@@ -243,10 +233,7 @@ def generate_from_document(
             types,
             segment_count,
             model,
-            str(active["provider"]),
-            str(active["api_key"]) if active["api_key"] else None,
-            math_focus,
-            dl_focus,
+            api_key,
         )
         if payload is not None:
             payloads.append(payload)
@@ -255,8 +242,7 @@ def generate_from_document(
                 "segment_llm_done",
                 index=job_index,
                 total=total_jobs,
-                provider=str(active["provider"]),
-                model=_resolve_model_id(str(active["provider"]), model),
+                model=model_id,
                 mcq_count=len(payload.get("mcq", [])),
             )
         else:
@@ -266,7 +252,7 @@ def generate_from_document(
                 "segment_skip",
                 index=job_index,
                 total=total_jobs,
-                provider=str(active["provider"]),
+                model=model_id,
             )
 
     if not payloads:
@@ -287,7 +273,6 @@ def generate_from_document(
         mcq_after_dedupe=mcq_after_dedupe,
     )
     _emit_progress(progress_callback, "validate", mcq_before_filter=mcq_after_dedupe)
-    provider_used = str(active["provider"])
     meta = {
         "text_chars": len(text),
         "segments_total": segments_total,
@@ -298,15 +283,13 @@ def generate_from_document(
         "target_questions": question_budget,
         "target_computation_min": computation_goal,
         "target_analysis_application_min": TARGET_ANALYSIS_APPLICATION_MIN,
-        "provider_used": provider_used,
+        "model_used": model_id,
     }
-    active_api_key = active["api_key"]
-    filtered = filter_payload(
+    filtered = filter_mcq_payload(
         merged,
         text,
         lang,
-        provider_used,
-        str(active_api_key) if active_api_key else None,
+        api_key,
         model,
     )
     mcq_before_cap = len(filtered.get("mcq", []))
@@ -316,12 +299,16 @@ def generate_from_document(
         mcq_before_cap=mcq_before_cap,
         target_questions=question_budget,
     )
-    capped = cap_payload(
-        filtered,
-        max_total=question_budget,
-        min_computation=computation_goal,
-        source=text,
-    )
+    capped = {
+        "mcq": cap_and_diversify_mcq(
+            list(filtered.get("mcq", [])),
+            max_total=question_budget,
+            min_computation=computation_goal,
+            min_analysis_application=TARGET_ANALYSIS_APPLICATION_MIN,
+        ),
+        "tf": list(filtered.get("tf", [])),
+        "short": list(filtered.get("short", [])),
+    }
     mcq_final = len(capped.get("mcq", []))
     meta["mcq_before_cap"] = mcq_before_cap
     meta["mcq_final"] = mcq_final
@@ -329,7 +316,7 @@ def generate_from_document(
         progress_callback,
         "done",
         mcq_final=mcq_final,
-        provider_used=provider_used,
+        model_used=model_id,
         segments_skipped=segments_skipped,
     )
     return capped, meta

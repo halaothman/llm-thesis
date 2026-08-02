@@ -1,3 +1,4 @@
+"""تصدير الأسئلة المُولَّدة إلى DataFrame و Excel."""
 from __future__ import annotations
 
 import io
@@ -6,6 +7,7 @@ import pandas as pd
 
 
 def questions_to_dataframe(payload: dict, default_difficulty: str = "Medium") -> pd.DataFrame:
+    """تحويل payload (mcq/tf/short) إلى جدول للعرض والتصدير."""
     rows: list[dict] = []
     counter = 1
 
@@ -84,6 +86,7 @@ def questions_to_dataframe(payload: dict, default_difficulty: str = "Medium") ->
 
 
 def dataframe_to_excel(df: pd.DataFrame) -> bytes:
+    """تسلسل DataFrame إلى ملف xlsx في الذاكرة."""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Questions")

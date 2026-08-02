@@ -1,3 +1,4 @@
+"""توليد أسئلة MCQ عبر DeepSeek: prompts، تحليل الرد، تطبيع، وتنظيف."""
 from __future__ import annotations
 
 import json
@@ -6,14 +7,15 @@ from typing import Literal
 
 from langdetect import detect
 
-from .config import JSON_MODE_PROVIDERS
+from .config import DEEPSEEK_R1_MODEL
 from .llm_client import chat_complete
-from .prompts import build_prompt, build_system_message
+from .prompts.deepseek import build_deepseek_prompt, build_deepseek_system_message
 
 Lang = Literal["ar", "en"]
 Difficulty = Literal["Easy", "Medium", "Hard"]
 QuestionType = Literal["mcq", "tf", "short"]
 
+# قواعد لغة (للاستخدام المحتمل في prompts)
 LANGUAGE_RULES_AR = """
 - استخدم العربية الفصحى مع مصطلحات تقنية إنجليزية شائعة فقط (مثل CNN, Attention, FLOPs)
 - ممنوع تماماً: الأحرف الصينية أو اليابانية أو الكورية أو أي رموز غريبة
@@ -43,6 +45,7 @@ FORBIDDEN_CHARS = re.compile(
 
 
 def detect_lang(text: str) -> Lang:
+    """كشف لغة المستند (ar/en)."""
     try:
         return "ar" if detect(text) == "ar" else "en"
     except Exception:
@@ -50,6 +53,7 @@ def detect_lang(text: str) -> Lang:
 
 
 def sanitize_text(text: str) -> str:
+    """إزالة رموز CJK/Cyrillic وغيرها من نص السؤال."""
     if not text:
         return text
     cleaned = FORBIDDEN_CHARS.sub("", str(text))
@@ -58,6 +62,7 @@ def sanitize_text(text: str) -> str:
 
 
 def sanitize_payload(payload: dict) -> dict:
+    """تنظيف كل حقول mcq/tf/short بعد التوليد."""
     for key in ("mcq", "tf", "short"):
         for item in payload.get(key, []):
             item["q"] = sanitize_text(item.get("q", ""))
@@ -78,6 +83,7 @@ def sanitize_payload(payload: dict) -> dict:
 
 
 def _mcq_item_from_raw(item: dict, default_difficulty: str) -> dict:
+    """تحويل عنصر MCQ خام من JSON النموذج إلى الشكل الداخلي."""
     options = _resolve_mcq_options(item.get("options", []))
     answer = _resolve_mcq_answer(options, item.get("correct_answer", item.get("answer", "")))
     question_kind = item.get("type", item.get("question_kind", ""))
@@ -94,6 +100,7 @@ def _mcq_item_from_raw(item: dict, default_difficulty: str) -> dict:
 
 
 def _strip_model_artifacts(text: str) -> str:
+    """إزالة think/redacted_thinking من رد النموذج."""
     cleaned = str(text or "")
     think_open = "<" + "think" + ">"
     think_close = "</" + "think" + ">"
@@ -115,6 +122,7 @@ def _strip_model_artifacts(text: str) -> str:
 
 
 def _extract_json_object(text: str) -> str:
+    """استخراج {…} من markdown أو نص محيط."""
     text = _strip_model_artifacts(text)
     text = text.strip()
     if text.startswith("```"):
@@ -128,14 +136,17 @@ def _extract_json_object(text: str) -> str:
 
 
 def _fix_invalid_json_escapes(text: str) -> str:
+    """إصلاح escape غير صالح في JSON."""
     return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
 
 
 def _remove_trailing_commas(text: str) -> str:
+    """حذف فاصلة زائدة قبل } أو ]."""
     return re.sub(r",(\s*[}\]])", r"\1", text)
 
 
 def safe_json(raw: str) -> dict:
+    """تحليل JSON من رد LLM مع محاولات إصلاح."""
     text = _extract_json_object(raw)
     candidates = [
         text,
@@ -161,6 +172,7 @@ def safe_json(raw: str) -> dict:
 
 
 def _resolve_mcq_options(options: object) -> list[str]:
+    """توحيد الخيارات (قائمة أو dict A-D)."""
     if isinstance(options, dict):
         return [str(options.get(key, "")) for key in ("A", "B", "C", "D")]
     if isinstance(options, list):
@@ -169,6 +181,7 @@ def _resolve_mcq_options(options: object) -> list[str]:
 
 
 def _resolve_mcq_answer(options: list[str], answer: object) -> str:
+    """تحويل حرف A-D إلى نص الخيار إن لزم."""
     if isinstance(answer, str) and len(answer) == 1 and answer.upper() in "ABCD":
         index = "ABCD".index(answer.upper())
         if index < len(options):
@@ -177,6 +190,7 @@ def _resolve_mcq_answer(options: list[str], answer: object) -> str:
 
 
 def normalize_payload(raw: dict, default_difficulty: str = "Hard") -> dict:
+    """توحيد أشكال JSON مختلفة إلى mcq/tf/short."""
     normalized: dict[str, list[dict]] = {"mcq": [], "tf": [], "short": []}
 
     if isinstance(raw.get("mcq"), list):
@@ -228,37 +242,21 @@ def generate_questions(
     types: list[QuestionType],
     num_questions: int | None = None,
     model: str = "",
-    provider: str = "deepseek",
     api_key: str | None = None,
-    math_focus: bool = False,
-    dl_focus: bool = False,
 ) -> dict:
-    prompt = build_prompt(
-        context,
-        lang,
-        difficulty,
-        types,
-        num_questions,
-        provider,
-        math_focus=math_focus,
-        dl_focus=dl_focus,
-    )
-    system = build_system_message(lang, provider)
+    """استدعاء DeepSeek R1 لتوليد أسئلة من مقطع واحد (مع إعادة محاولة JSON)."""
+    del types
+    prompt = build_deepseek_prompt(context, difficulty, num_questions)
+    system = build_deepseek_system_message(lang)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
     ]
+    resolved_model = model or DEEPSEEK_R1_MODEL
     last_error: json.JSONDecodeError | None = None
-    for attempt, temp in enumerate((0.25, 0.1)):
+    for attempt in range(2):
         try:
-            content = chat_complete(
-                provider,
-                model,
-                messages,
-                api_key=api_key,
-                temperature=temp,
-                json_mode=provider in JSON_MODE_PROVIDERS,
-            )
+            content = chat_complete(resolved_model, messages, api_key=api_key)
             return sanitize_payload(
                 normalize_payload(safe_json(content), default_difficulty=difficulty)
             )

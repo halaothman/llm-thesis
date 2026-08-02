@@ -1,20 +1,22 @@
+"""التحقق من أسئلة MCQ: قواعد محلية + فلترة LLM مقابل المستند."""
 from __future__ import annotations
 
 import json
 import re
 
-from .config import JSON_MODE_PROVIDERS
 from .generator import Lang, safe_json
 from .llm_client import chat_complete
 from .numeric_recall import is_numeric_recall_from_source
 
 VALIDATION_CONTEXT_LIMIT = 14_000
 
+# كلمات غامضة غير موجودة في المصدر
 FORBIDDEN_VAGUE_WORDS = re.compile(
     r"\b(best|expected|usually|generally|might|could|would)\b",
     re.IGNORECASE,
 )
 
+# أسئلة تعريف trivial
 TRIVIAL_NAME_PATTERNS = re.compile(
     r"^(what is|what does|define|ما هو|ما هي|عرّف|عرّف)\s+[\w\.]+(\s+do|\s+does)?\s*\?",
     re.IGNORECASE,
@@ -63,10 +65,12 @@ UNCERTAIN_SOLUTION = re.compile(
 
 
 def _normalize(text: str) -> str:
+    """تطبيع للمقارنة (مسافات + lowercase)."""
     return re.sub(r"\s+", " ", str(text or "").strip()).lower()
 
 
 def _contains_forbidden_vague_words(text: str, source: str) -> bool:
+    """كلمات غامضة غير مذكورة في المصدر."""
     source_lower = source.lower()
     for match in FORBIDDEN_VAGUE_WORDS.finditer(text):
         if match.group(0).lower() not in source_lower:
@@ -75,10 +79,12 @@ def _contains_forbidden_vague_words(text: str, source: str) -> bool:
 
 
 def _is_trivial_name_question(question: str) -> bool:
+    """سؤال «ما هو X؟» سطحي."""
     return bool(TRIVIAL_NAME_PATTERNS.match(question.strip()))
 
 
 def _passes_rule_checks(item: dict, source: str = "") -> bool:
+    """فحص قواعد محلية (4 خيارات، إجابة ضمن الخيارات، منع recall/hafظ، …)."""
     question = str(item.get("q", "")).strip()
     options = [str(option).strip() for option in item.get("options", []) if str(option).strip()]
     answer = str(item.get("answer", "")).strip()
@@ -143,6 +149,7 @@ def _passes_rule_checks(item: dict, source: str = "") -> bool:
 
 
 def _build_validation_prompt(source: str, questions: list[dict], lang: Lang) -> str:
+    """prompt التحقق LLM: قائمة ids للإبقاء/الرفض."""
     compact_questions = [
         {
             "id": index + 1,
@@ -213,10 +220,10 @@ def _llm_filter_ids(
     source: str,
     questions: list[dict],
     lang: Lang,
-    provider: str,
     api_key: str | None,
     model: str,
 ) -> set[int]:
+    """استدعاء LLM وإرجاع مجموعة ids المقبولة."""
     if not questions:
         return set()
 
@@ -227,16 +234,13 @@ def _llm_filter_ids(
         else "تحقق من أسئلة MCQ مقابل المستند. كن صارماً. JSON فقط."
     )
     content = chat_complete(
-        provider,
         model,
         [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
         api_key=api_key,
-        temperature=0.1,
         max_tokens=2048,
-        json_mode=provider in JSON_MODE_PROVIDERS,
     )
     parsed = safe_json(content)
     keep_ids: set[int] = set()
@@ -252,10 +256,10 @@ def filter_mcq_payload(
     payload: dict,
     source: str,
     lang: Lang,
-    provider: str,
     api_key: str | None,
     model: str = "",
 ) -> dict:
+    """قواعد محلية ثم فلترة LLM؛ عند فشل LLM يُبقى ما نجح في القواعد."""
     mcq_items = payload.get("mcq", [])
     if not mcq_items:
         return payload
@@ -266,7 +270,7 @@ def filter_mcq_payload(
         return payload
 
     try:
-        keep_ids = _llm_filter_ids(source, rule_passed, lang, provider, api_key, model)
+        keep_ids = _llm_filter_ids(source, rule_passed, lang, api_key, model)
     except Exception:
         payload["mcq"] = rule_passed
         return payload
@@ -275,14 +279,3 @@ def filter_mcq_payload(
         item for index, item in enumerate(rule_passed, start=1) if index in keep_ids
     ]
     return payload
-
-
-def filter_payload(
-    payload: dict,
-    source: str,
-    lang: Lang,
-    provider: str,
-    api_key: str | None,
-    model: str = "",
-) -> dict:
-    return filter_mcq_payload(payload, source, lang, provider, api_key, model)
