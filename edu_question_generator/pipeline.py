@@ -1,4 +1,4 @@
-"""Pipeline كامل: مستند → مقاطع → توليد → دمج → تحقق → اختيار.
+"""Pipeline كامل: مستند → مقاطع → توليد MCQ → دمج → تحقق → اختيار.
 
 الاستراتيجية:
 1. استخراج النص
@@ -16,8 +16,9 @@ from typing import Any
 
 from .chunking import build_logical_segments
 from .config import (
-    DEEPSEEK_R1_MODEL,
+    DEEPSEEK_MODEL,
     LLM_INSUFFICIENT_BALANCE,
+    LLM_INVALID_MODEL,
     LLM_LIMIT_ERROR,
     LLM_REQUEST_TOO_LARGE,
     LOGICAL_SEGMENT_MAX_CHARS,
@@ -27,7 +28,7 @@ from .config import (
     TARGET_ANALYSIS_APPLICATION_MIN,
     TARGET_QUESTIONS_TOTAL,
 )
-from .generator import Difficulty, Lang, QuestionType, generate_questions
+from .generator import Difficulty, Lang, generate_questions
 from .question_selection import cap_and_diversify_mcq, distribute_question_counts
 from .validator import filter_mcq_payload
 
@@ -35,8 +36,8 @@ PipelineProgressCallback = Callable[[str, dict[str, Any]], None]  # (stage, بي
 
 
 def _resolve_model_id(model: str) -> str:
-    """معرّف نموذج R1 (افتراضي من config)."""
-    return model or DEEPSEEK_R1_MODEL
+    """معرّف النموذج (من ui/secrets أو config)."""
+    return model or DEEPSEEK_MODEL
 
 
 def _emit_progress(
@@ -49,27 +50,6 @@ def _emit_progress(
         callback(stage, payload)
 
 
-def sample_segments(segments: list[str], max_segments: int) -> list[str]:
-    """أخذ عينة متباعدة من المقاطع (غير مستخدم حالياً في المسار الرئيسي)."""
-    if len(segments) <= max_segments:
-        return segments
-    if max_segments <= 0:
-        return []
-    if max_segments == 1:
-        return [segments[len(segments) // 2]]
-
-    last_index = len(segments) - 1
-    picked: list[str] = []
-    seen: set[int] = set()
-    for i in range(max_segments):
-        index = round(i * last_index / (max_segments - 1))
-        if index in seen:
-            continue
-        seen.add(index)
-        picked.append(segments[index])
-    return picked
-
-
 def _question_key(item: dict) -> str:
     """مفتاح إزالة تكرار MCQ (نص + خيارات)."""
     question = re.sub(r"\s+", " ", str(item.get("q", "")).strip().lower())
@@ -80,60 +60,51 @@ def _question_key(item: dict) -> str:
     return f"{question}::{options}"
 
 
-def dedupe_payload(payload: dict) -> dict:
-    """إزالة أسئلة مكررة داخل payload."""
-    deduped = {"mcq": [], "tf": [], "short": []}
-    seen_mcq: set[str] = set()
-
-    for item in payload.get("mcq", []):
+def dedupe_mcq(items: list[dict]) -> list[dict]:
+    """إزالة أسئلة MCQ مكررة."""
+    deduped: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
         key = _question_key(item)
-        if not key or key in seen_mcq:
+        if not key or key in seen:
             continue
-        seen_mcq.add(key)
-        deduped["mcq"].append(item)
-
-    for key in ("tf", "short"):
-        seen: set[str] = set()
-        for item in payload.get(key, []):
-            item_key = re.sub(r"\s+", " ", str(item.get("q", "")).strip().lower())
-            if not item_key or item_key in seen:
-                continue
-            seen.add(item_key)
-            deduped[key].append(item)
-
+        seen.add(key)
+        deduped.append(item)
     return deduped
 
 
 def merge_payloads(payloads: list[dict]) -> dict:
     """دمج نتائج المقاطع ثم dedupe."""
-    merged = {"mcq": [], "tf": [], "short": []}
+    merged: list[dict] = []
     for payload in payloads:
-        for key in merged:
-            merged[key].extend(payload.get(key, []))
-    return dedupe_payload(merged)
+        merged.extend(payload.get("mcq", []))
+    return {"mcq": dedupe_mcq(merged)}
 
 
-_PROVIDER_LIMIT_ERRORS = frozenset({LLM_LIMIT_ERROR, LLM_INSUFFICIENT_BALANCE})
+# أخطاء تُوقف pipeline فوراً (لا تُتجاهل كـ segment_skip)
+_FATAL_LLM_ERRORS = frozenset({
+    LLM_LIMIT_ERROR,
+    LLM_INSUFFICIENT_BALANCE,
+    LLM_INVALID_MODEL,
+})
 
 
 def _generate_segment_payload(
     segment: str,
     lang: Lang,
     difficulty: Difficulty,
-    types: list[QuestionType],
     num_questions: int | None,
     model: str,
     api_key: str | None,
 ) -> dict | None:
-    """توليد من مقطع واحد؛ None عند فشل تحليل الرد أو طلب كبير."""
+    """توليد MCQ من مقطع واحد؛ None عند فشل تحليل الرد أو طلب كبير."""
     if num_questions == 0:
-        return {"mcq": [], "tf": [], "short": []}
+        return {"mcq": []}
     try:
         return generate_questions(
             segment,
             lang,
             difficulty,
-            types,
             num_questions,
             model,
             api_key,
@@ -144,7 +115,7 @@ def _generate_segment_payload(
         message = str(exc)
         if message == LLM_REQUEST_TOO_LARGE:
             return None
-        if message in _PROVIDER_LIMIT_ERRORS:
+        if message in _FATAL_LLM_ERRORS:
             raise
         return None
 
@@ -153,7 +124,6 @@ def generate_from_document(
     text: str,
     lang: Lang,
     difficulty: Difficulty,
-    types: list[QuestionType],
     num_questions: int | None = None,
     model: str = "",
     api_key: str | None = None,
@@ -181,7 +151,7 @@ def generate_from_document(
     )
 
     if not segments:
-        return {"mcq": [], "tf": [], "short": []}, {
+        return {"mcq": []}, {
             "text_chars": len(text),
             "segments_total": 0,
             "segments_used": 0,
@@ -192,7 +162,6 @@ def generate_from_document(
         }
 
     segments_total = len(segments)
-    segments_sampled = False
 
     _emit_progress(
         progress_callback,
@@ -200,7 +169,6 @@ def generate_from_document(
         text_chars=len(text),
         segments_total=segments_total,
         segments_used=len(segments),
-        segments_sampled=segments_sampled,
         segment_max_chars=LOGICAL_SEGMENT_MAX_CHARS,
         target_questions=question_budget,
     )
@@ -230,7 +198,6 @@ def generate_from_document(
             segment,
             lang,
             difficulty,
-            types,
             segment_count,
             model,
             api_key,
@@ -306,8 +273,6 @@ def generate_from_document(
             min_computation=computation_goal,
             min_analysis_application=TARGET_ANALYSIS_APPLICATION_MIN,
         ),
-        "tf": list(filtered.get("tf", [])),
-        "short": list(filtered.get("short", [])),
     }
     mcq_final = len(capped.get("mcq", []))
     meta["mcq_before_cap"] = mcq_before_cap

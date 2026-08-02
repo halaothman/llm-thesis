@@ -1,21 +1,35 @@
-"""تصدير الأسئلة المُولَّدة إلى DataFrame و Excel."""
+"""تصدير أسئلة MCQ إلى DataFrame و Excel."""
 from __future__ import annotations
 
 import io
 
 import pandas as pd
 
+# أعمدة جدول Excel/العرض
+_COLUMNS = [
+    "#",
+    "Type",
+    "Question Kind",
+    "Question",
+    "Option A",
+    "Option B",
+    "Option C",
+    "Option D",
+    "Answer",
+    "Solution",
+]
+
 
 def questions_to_dataframe(payload: dict, default_difficulty: str = "Medium") -> pd.DataFrame:
-    """تحويل payload (mcq/tf/short) إلى جدول للعرض والتصدير."""
+    """تحويل payload['mcq'] إلى جدول للعرض والتصدير."""
+    del default_difficulty
     rows: list[dict] = []
-    counter = 1
 
-    for item in payload.get("mcq", []):
+    for index, item in enumerate(payload.get("mcq", []), start=1):
         options = item.get("options", [])
         rows.append(
             {
-                "#": counter,
+                "#": index,
                 "Type": "MCQ",
                 "Question Kind": item.get("question_kind", ""),
                 "Question": item.get("q", ""),
@@ -27,62 +41,10 @@ def questions_to_dataframe(payload: dict, default_difficulty: str = "Medium") ->
                 "Solution": item.get("solution") or item.get("explanation", ""),
             }
         )
-        counter += 1
 
-    for item in payload.get("tf", []):
-        answer = item.get("answer")
-        if isinstance(answer, bool):
-            answer_text = "True" if answer else "False"
-        else:
-            answer_text = str(answer)
-        rows.append(
-            {
-                "#": counter,
-                "Type": "True/False",
-                "Question Kind": item.get("question_kind", ""),
-                "Question": item.get("q", ""),
-                "Option A": "True",
-                "Option B": "False",
-                "Option C": "",
-                "Option D": "",
-                "Answer": answer_text,
-                "Solution": item.get("solution") or item.get("explanation", ""),
-            }
-        )
-        counter += 1
-
-    for item in payload.get("short", []):
-        rows.append(
-            {
-                "#": counter,
-                "Type": "Short Answer",
-                "Question Kind": item.get("question_kind", ""),
-                "Question": item.get("q", ""),
-                "Option A": "",
-                "Option B": "",
-                "Option C": "",
-                "Option D": "",
-                "Answer": item.get("answer", ""),
-                "Solution": item.get("solution") or item.get("explanation", ""),
-            }
-        )
-        counter += 1
-
-    columns = [
-        "#",
-        "Type",
-        "Question Kind",
-        "Question",
-        "Option A",
-        "Option B",
-        "Option C",
-        "Option D",
-        "Answer",
-        "Solution",
-    ]
     if not rows:
-        return pd.DataFrame(columns=columns)
-    return pd.DataFrame(rows)[columns]
+        return pd.DataFrame(columns=_COLUMNS)
+    return pd.DataFrame(rows)[_COLUMNS]
 
 
 def dataframe_to_excel(df: pd.DataFrame) -> bytes:

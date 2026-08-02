@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 
+# أنواع MCQ حسب حقل type من JSON النموذج
 _COMPUTATION_TYPES = frozenset(
     {"computation", "computational", "حساب", "حسابي", "calculation", "numeric"}
 )
@@ -32,10 +33,12 @@ def _question_type(item: dict) -> str:
 
 
 def _is_computation(item: dict) -> bool:
+    """هل السؤال من نوع computation حسب حقل type؟"""
     return _question_type(item) in _COMPUTATION_TYPES
 
 
 def _is_analysis_or_application(item: dict) -> bool:
+    """هل السؤال تحليل أو تطبيق حسب حقل type؟"""
     return _question_type(item) in _ANALYSIS_APPLICATION_TYPES
 
 

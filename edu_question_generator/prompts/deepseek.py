@@ -1,4 +1,4 @@
-"""Prompt كامل لـ DeepSeek R1: امتحان جامعي MCQ صعب من جزء المستند."""
+"""Prompt DeepSeek: امتحان جامعي MCQ صعب من جزء المستند."""
 from __future__ import annotations
 
 from typing import Literal
@@ -181,5 +181,5 @@ SYSTEM_MESSAGES = {
 
 
 def build_deepseek_system_message(lang: str) -> str:
-    """رسالة system لـ DeepSeek R1."""
+    """رسالة system حسب لغة المستند (ar/en)."""
     return SYSTEM_MESSAGES["ar" if lang == "ar" else "en"]

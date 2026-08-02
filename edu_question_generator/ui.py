@@ -1,4 +1,4 @@
-"""واجهة Streamlit لـ Edu Question Generator (DeepSeek)."""
+"""واجهة Streamlit: رفع ملف → pipeline → عرض MCQ → تحميل Excel."""
 from __future__ import annotations
 
 import html
@@ -9,19 +9,20 @@ import tempfile
 import streamlit as st
 
 from edu_question_generator.config import (
+    DEEPSEEK_MODEL as DEFAULT_DEEPSEEK_MODEL,
     LLM_INSUFFICIENT_BALANCE,
+    LLM_INVALID_MODEL,
     LLM_LIMIT_ERROR,
     LLM_REQUEST_TOO_LARGE,
     PIPELINE_ALL_SEGMENTS_FAILED,
     TARGET_QUESTIONS_TOTAL,
 )
 from edu_question_generator.excel_export import dataframe_to_excel, questions_to_dataframe
-from edu_question_generator.generator import QuestionType, detect_lang
+from edu_question_generator.generator import detect_lang
 from edu_question_generator.loaders import load_text
 from edu_question_generator.pipeline import generate_from_document
 
 DIFFICULTY = "Hard"  # مستوى الصعوبة الافتراضي
-QUESTION_TYPES: list[QuestionType] = ["mcq"]
 
 # CSS مخصّص لتبويب Edu في app.py
 _EDU_STYLES = """
@@ -85,6 +86,11 @@ def _read_secret(name: str) -> str | None:
 def get_deepseek_api_key() -> str | None:
     """مفتاح DeepSeek للتوليد."""
     return _read_secret("DEEPSEEK_API_KEY")
+
+
+def get_deepseek_model() -> str:
+    """معرّف النموذج من secrets.toml ثم env ثم config."""
+    return _read_secret("DEEPSEEK_MODEL") or DEFAULT_DEEPSEEK_MODEL
 
 
 def _init_edu_state() -> None:
@@ -192,7 +198,7 @@ def make_pipeline_progress_ui():
     return callback, progress_bar
 
 
-def _render_provider_status() -> None:
+def _render_api_key_status() -> None:
     """تحذير عند غياب DEEPSEEK_API_KEY."""
     if get_deepseek_api_key():
         return
@@ -213,33 +219,22 @@ def _rtl_markdown(content: str) -> None:
 
 
 def _render_questions(df) -> None:
-    """عرض جدول الأسئلة في بطاقات."""
-    type_labels = {
-        "MCQ": "اختيار من متعدد",
-        "True/False": "صح / خطأ",
-        "Short Answer": "إجابة قصيرة",
-    }
-
+    """عرض أسئلة MCQ في بطاقات."""
     for _, row in df.iterrows():
-        q_type = row["Type"]
-        label = type_labels.get(q_type, q_type)
         with st.container(border=True):
             kind = row.get("Question Kind", "")
             kind_line = f" · {html.escape(str(kind))}" if kind and str(kind).strip() else ""
-            _rtl_markdown(f"<h3>س{row['#']} — {label}{kind_line}</h3>")
+            _rtl_markdown(f"<h3>س{row['#']} — اختيار من متعدد{kind_line}</h3>")
             _rtl_markdown(f"<p><strong>{html.escape(str(row['Question']))}</strong></p>")
 
-            if q_type == "MCQ":
-                options_html = ""
-                for letter in ("A", "B", "C", "D"):
-                    option = row.get(f"Option {letter}", "")
-                    if option:
-                        options_html += (
-                            f"<p><strong>{letter}.</strong> {html.escape(str(option))}</p>"
-                        )
-                _rtl_markdown(options_html)
-            elif q_type == "True/False":
-                _rtl_markdown("<p>○ صح &nbsp;&nbsp; ○ خطأ</p>")
+            options_html = ""
+            for letter in ("A", "B", "C", "D"):
+                option = row.get(f"Option {letter}", "")
+                if option:
+                    options_html += (
+                        f"<p><strong>{letter}.</strong> {html.escape(str(option))}</p>"
+                    )
+            _rtl_markdown(options_html)
 
             _rtl_markdown(
                 f"<p>✅ <strong>الإجابة:</strong> {html.escape(str(row['Answer']))}</p>"
@@ -258,7 +253,7 @@ def render_edu_app() -> None:
     st.markdown('<div class="edu-qg">', unsafe_allow_html=True)
 
     st.markdown(
-        '<div class="main-title">📝 Edu Question Generator (DeepSeek R1)</div>',
+        '<div class="main-title">📝 Edu Question Generator (DeepSeek)</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -268,7 +263,7 @@ def render_edu_app() -> None:
         unsafe_allow_html=True,
     )
 
-    _render_provider_status()
+    _render_api_key_status()
 
     uploaded = st.file_uploader(
         "PDF / DOCX / TXT",
@@ -316,8 +311,7 @@ def render_edu_app() -> None:
                         text=text,
                         lang=lang,
                         difficulty=DIFFICULTY,
-                        types=QUESTION_TYPES,
-                        model="",
+                        model=get_deepseek_model(),
                         api_key=api_key,
                         progress_callback=on_pipeline_progress,
                     )
@@ -333,6 +327,13 @@ def render_edu_app() -> None:
                         st.error(
                             "تعذّر توليد أسئلة من جميع أجزاء المستند. "
                             "جرّب ملفاً أصغر أو حاول لاحقاً."
+                        )
+                    elif message == LLM_INVALID_MODEL:
+                        st.error(
+                            "اسم النموذج غير مدعوم. "
+                            "ضع `DEEPSEEK_MODEL` صحيحاً في `.streamlit/secrets.toml` "
+                            "(مثل `deepseek-chat` أو `deepseek-reasoner`) "
+                            "ثم أعد تشغيل Streamlit."
                         )
                     elif message == LLM_LIMIT_ERROR:
                         st.error("تم استنفاد الحد المتاح. حاول لاحقاً.")

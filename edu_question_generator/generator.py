@@ -7,27 +7,14 @@ from typing import Literal
 
 from langdetect import detect
 
-from .config import DEEPSEEK_R1_MODEL
+from .config import DEEPSEEK_MODEL
 from .llm_client import chat_complete
 from .prompts.deepseek import build_deepseek_prompt, build_deepseek_system_message
 
 Lang = Literal["ar", "en"]
 Difficulty = Literal["Easy", "Medium", "Hard"]
-QuestionType = Literal["mcq", "tf", "short"]
 
-# قواعد لغة (للاستخدام المحتمل في prompts)
-LANGUAGE_RULES_AR = """
-- استخدم العربية الفصحى مع مصطلحات تقنية إنجليزية شائعة فقط (مثل CNN, Attention, FLOPs)
-- ممنوع تماماً: الأحرف الصينية أو اليابانية أو الكورية أو أي رموز غريبة
-- مسموح فقط: العربية، الإنجليزية، الأرقام، وعلامات رياضية شائعة (+ - × ÷ = ^ / ( ) [ ] %)
-"""
-
-LANGUAGE_RULES_EN = """
-- Use clear English with standard technical terms only
-- Never use Chinese, Japanese, Korean, or unrelated scripts/symbols
-- Allowed only: English, Arabic if needed for terms, digits, and common math symbols (+ - × ÷ = ^ / ( ) [ ] %)
-"""
-
+# رموز غير مسموحة في نص السؤال (CJK، Cyrillic، …)
 FORBIDDEN_CHARS = re.compile(
     "["
     "\u4e00-\u9fff"  # CJK Unified Ideographs
@@ -62,23 +49,16 @@ def sanitize_text(text: str) -> str:
 
 
 def sanitize_payload(payload: dict) -> dict:
-    """تنظيف كل حقول mcq/tf/short بعد التوليد."""
-    for key in ("mcq", "tf", "short"):
-        for item in payload.get(key, []):
-            item["q"] = sanitize_text(item.get("q", ""))
-            item["solution"] = sanitize_text(item.get("solution") or item.get("explanation", ""))
-            item["explanation"] = item["solution"]
-            if item.get("question_kind"):
-                item["question_kind"] = sanitize_text(str(item["question_kind"]))
-            if key == "mcq":
-                item["options"] = [sanitize_text(option) for option in item.get("options", [])]
-                if not isinstance(item.get("answer"), bool):
-                    item["answer"] = sanitize_text(str(item.get("answer", "")))
-            elif key == "tf":
-                if not isinstance(item.get("answer"), bool):
-                    item["answer"] = sanitize_text(str(item.get("answer", "")))
-            else:
-                item["answer"] = sanitize_text(str(item.get("answer", "")))
+    """تنظيف حقول MCQ بعد التوليد."""
+    for item in payload.get("mcq", []):
+        item["q"] = sanitize_text(item.get("q", ""))
+        item["solution"] = sanitize_text(item.get("solution") or item.get("explanation", ""))
+        item["explanation"] = item["solution"]
+        if item.get("question_kind"):
+            item["question_kind"] = sanitize_text(str(item["question_kind"]))
+        item["options"] = [sanitize_text(option) for option in item.get("options", [])]
+        if not isinstance(item.get("answer"), bool):
+            item["answer"] = sanitize_text(str(item.get("answer", "")))
     return payload
 
 
@@ -87,7 +67,7 @@ def _mcq_item_from_raw(item: dict, default_difficulty: str) -> dict:
     options = _resolve_mcq_options(item.get("options", []))
     answer = _resolve_mcq_answer(options, item.get("correct_answer", item.get("answer", "")))
     question_kind = item.get("type", item.get("question_kind", ""))
-    if question_kind in {"mcq", "true_false", "tf", "short"}:
+    if str(question_kind).lower() in {"mcq", "true_false", "tf", "short"}:
         question_kind = item.get("question_kind", "")
     return {
         "q": item.get("question") or item.get("q", ""),
@@ -190,69 +170,38 @@ def _resolve_mcq_answer(options: list[str], answer: object) -> str:
 
 
 def normalize_payload(raw: dict, default_difficulty: str = "Hard") -> dict:
-    """توحيد أشكال JSON مختلفة إلى mcq/tf/short."""
-    normalized: dict[str, list[dict]] = {"mcq": [], "tf": [], "short": []}
+    """توحيد JSON النموذج إلى قائمة mcq."""
+    mcq: list[dict] = []
 
     if isinstance(raw.get("mcq"), list):
         for item in raw["mcq"]:
-            normalized["mcq"].append(_mcq_item_from_raw(item, default_difficulty))
-        return normalized
+            mcq.append(_mcq_item_from_raw(item, default_difficulty))
+        return {"mcq": mcq}
 
     for item in raw.get("questions", []):
         question_type = str(item.get("type", "")).lower().replace("-", "_").replace(" ", "_")
-        if question_type in {"analytical", "computational"}:
-            normalized["mcq"].append(_mcq_item_from_raw(item, default_difficulty))
-            continue
+        if question_type in {"mcq", "analytical", "computational", "analysis", "computation", "application", "understanding"}:
+            mcq.append(_mcq_item_from_raw(item, default_difficulty))
 
-        question = item.get("question") or item.get("q", "")
-        solution = item.get("solution") or item.get("explanation", "")
-        item_difficulty = item.get("difficulty", default_difficulty)
-        question_kind = item.get("question_kind", "")
-
-        if question_type == "mcq":
-            normalized["mcq"].append(_mcq_item_from_raw(item, default_difficulty))
-        elif question_type in {"tf", "true_false", "true/false"}:
-            normalized["tf"].append(
-                {
-                    "q": question,
-                    "answer": item.get("correct_answer", item.get("answer")),
-                    "solution": solution,
-                    "question_kind": question_kind,
-                    "difficulty": item_difficulty,
-                }
-            )
-        elif question_type == "short":
-            normalized["short"].append(
-                {
-                    "q": question,
-                    "answer": item.get("correct_answer", item.get("answer", "")),
-                    "solution": solution,
-                    "question_kind": question_kind,
-                    "difficulty": item_difficulty,
-                }
-            )
-
-    return normalized
+    return {"mcq": mcq}
 
 
 def generate_questions(
     context: str,
     lang: Lang,
     difficulty: Difficulty,
-    types: list[QuestionType],
     num_questions: int | None = None,
     model: str = "",
     api_key: str | None = None,
 ) -> dict:
-    """استدعاء DeepSeek R1 لتوليد أسئلة من مقطع واحد (مع إعادة محاولة JSON)."""
-    del types
+    """استدعاء DeepSeek لتوليد MCQ من مقطع واحد (مع إعادة محاولة JSON)."""
     prompt = build_deepseek_prompt(context, difficulty, num_questions)
     system = build_deepseek_system_message(lang)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
     ]
-    resolved_model = model or DEEPSEEK_R1_MODEL
+    resolved_model = model or DEEPSEEK_MODEL
     last_error: json.JSONDecodeError | None = None
     for attempt in range(2):
         try:

@@ -1,11 +1,16 @@
-"""إعدادات Edu Question Generator: DeepSeek R1، تقسيم المستند، وأهداف عدد الأسئلة."""
+"""إعدادات Edu Question Generator: DeepSeek API، تقسيم المستند، وأهداف عدد الأسئلة."""
 import os
 
-# --- اتصال DeepSeek API (نموذج R1 فقط) ---
+# --- اتصال DeepSeek API ---
+# النموذج الفعلي يُقرأ من .streamlit/secrets.toml (DEEPSEEK_MODEL) عبر ui.get_deepseek_model()
+# النماذج الشائعة: deepseek-chat | deepseek-reasoner | deepseek-v4-pro | deepseek-v4-flash
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_R1_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-r1")
-DEEPSEEK_R1_MAX_TOKENS = int(os.getenv("DEEPSEEK_R1_MAX_TOKENS", "8192"))
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MAX_TOKENS = int(os.getenv("DEEPSEEK_MAX_TOKENS", "8192"))
 
+# aliases للتوافق مع imports قديمة
+DEEPSEEK_R1_MODEL = DEEPSEEK_MODEL
+DEEPSEEK_R1_MAX_TOKENS = DEEPSEEK_MAX_TOKENS
 # --- تقسيم حرفي ثابت (مسار legacy في build_segments) ---
 CHUNK_SIZE = 650
 CHUNK_OVERLAP = 100
@@ -31,5 +36,4 @@ LLM_REQUEST_TOO_LARGE = "LLM_REQUEST_TOO_LARGE"
 LLM_LIMIT_ERROR = "LLM_LIMIT_ERROR"
 LLM_INSUFFICIENT_BALANCE = "LLM_INSUFFICIENT_BALANCE"
 PIPELINE_ALL_SEGMENTS_FAILED = "PIPELINE_ALL_SEGMENTS_FAILED"
-
-MAX_CHUNK_GROUPS = MAX_SEGMENTS_PER_RUN
+LLM_INVALID_MODEL = "LLM_INVALID_MODEL"  # اسم نموذج غير مدعوم (HTTP 400)
