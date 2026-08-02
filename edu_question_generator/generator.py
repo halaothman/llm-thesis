@@ -12,7 +12,6 @@ from .llm_client import chat_complete
 from .prompts.deepseek import build_deepseek_prompt, build_deepseek_system_message
 
 Lang = Literal["ar", "en"]
-Difficulty = Literal["Easy", "Medium", "Hard"]
 
 # رموز غير مسموحة في نص السؤال (CJK، Cyrillic، …)
 FORBIDDEN_CHARS = re.compile(
@@ -62,7 +61,7 @@ def sanitize_payload(payload: dict) -> dict:
     return payload
 
 
-def _mcq_item_from_raw(item: dict, default_difficulty: str) -> dict:
+def _mcq_item_from_raw(item: dict) -> dict:
     """تحويل عنصر MCQ خام من JSON النموذج إلى الشكل الداخلي."""
     options = _resolve_mcq_options(item.get("options", []))
     answer = _resolve_mcq_answer(options, item.get("correct_answer", item.get("answer", "")))
@@ -75,7 +74,6 @@ def _mcq_item_from_raw(item: dict, default_difficulty: str) -> dict:
         "answer": answer,
         "solution": item.get("solution") or item.get("explanation", ""),
         "question_kind": question_kind,
-        "difficulty": item.get("difficulty", default_difficulty),
     }
 
 
@@ -169,19 +167,19 @@ def _resolve_mcq_answer(options: list[str], answer: object) -> str:
     return str(answer) if answer is not None else ""
 
 
-def normalize_payload(raw: dict, default_difficulty: str = "Hard") -> dict:
+def normalize_payload(raw: dict) -> dict:
     """توحيد JSON النموذج إلى قائمة mcq."""
     mcq: list[dict] = []
 
     if isinstance(raw.get("mcq"), list):
         for item in raw["mcq"]:
-            mcq.append(_mcq_item_from_raw(item, default_difficulty))
+            mcq.append(_mcq_item_from_raw(item))
         return {"mcq": mcq}
 
     for item in raw.get("questions", []):
         question_type = str(item.get("type", "")).lower().replace("-", "_").replace(" ", "_")
         if question_type in {"mcq", "analytical", "computational", "analysis", "computation", "application", "understanding"}:
-            mcq.append(_mcq_item_from_raw(item, default_difficulty))
+            mcq.append(_mcq_item_from_raw(item))
 
     return {"mcq": mcq}
 
@@ -189,13 +187,12 @@ def normalize_payload(raw: dict, default_difficulty: str = "Hard") -> dict:
 def generate_questions(
     context: str,
     lang: Lang,
-    difficulty: Difficulty,
     num_questions: int | None = None,
     model: str = "",
     api_key: str | None = None,
 ) -> dict:
     """استدعاء DeepSeek لتوليد MCQ من مقطع واحد (مع إعادة محاولة JSON)."""
-    prompt = build_deepseek_prompt(context, difficulty, num_questions)
+    prompt = build_deepseek_prompt(context, num_questions)
     system = build_deepseek_system_message(lang)
     messages = [
         {"role": "system", "content": system},
@@ -206,9 +203,7 @@ def generate_questions(
     for attempt in range(2):
         try:
             content = chat_complete(resolved_model, messages, api_key=api_key)
-            return sanitize_payload(
-                normalize_payload(safe_json(content), default_difficulty=difficulty)
-            )
+            return sanitize_payload(normalize_payload(safe_json(content)))
         except json.JSONDecodeError as exc:
             last_error = exc
             if attempt == 0:

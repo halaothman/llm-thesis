@@ -28,7 +28,7 @@ from .config import (
     TARGET_ANALYSIS_APPLICATION_MIN,
     TARGET_QUESTIONS_TOTAL,
 )
-from .generator import Difficulty, Lang, generate_questions
+from .generator import Lang, generate_questions
 from .question_selection import cap_and_diversify_mcq, distribute_question_counts
 from .validator import filter_mcq_payload
 
@@ -92,7 +92,6 @@ _FATAL_LLM_ERRORS = frozenset({
 def _generate_segment_payload(
     segment: str,
     lang: Lang,
-    difficulty: Difficulty,
     num_questions: int | None,
     model: str,
     api_key: str | None,
@@ -104,7 +103,6 @@ def _generate_segment_payload(
         return generate_questions(
             segment,
             lang,
-            difficulty,
             num_questions,
             model,
             api_key,
@@ -123,7 +121,6 @@ def _generate_segment_payload(
 def generate_from_document(
     text: str,
     lang: Lang,
-    difficulty: Difficulty,
     num_questions: int | None = None,
     model: str = "",
     api_key: str | None = None,
@@ -197,7 +194,6 @@ def generate_from_document(
         payload = _generate_segment_payload(
             segment,
             lang,
-            difficulty,
             segment_count,
             model,
             api_key,

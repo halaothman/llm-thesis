@@ -56,19 +56,9 @@ def _concept_key(item: dict) -> str:
     return f"q:{q[:100]}"
 
 
-def _difficulty_rank(item: dict) -> int:
-    """hard=2, medium=1, else=0."""
-    diff = str(item.get("difficulty", "")).strip().lower()
-    if diff == "hard":
-        return 2
-    if diff in {"medium", "med"}:
-        return 1
-    return 0
-
-
 def _quality_score(item: dict) -> float:
-    """ترتيب بسيط: صعوبة ثم نوع (من JSON بعد validator)."""
-    score = float(_difficulty_rank(item) * 3)
+    """ترتيب بسيط حسب نوع السؤال (من JSON بعد validator)."""
+    score = 0.0
     kind = _question_type(item)
     if kind in _ANALYSIS_APPLICATION_TYPES:
         score += 5.0

@@ -1,10 +1,6 @@
 """Prompt DeepSeek: امتحان جامعي MCQ صعب من جزء المستند."""
 from __future__ import annotations
 
-from typing import Literal
-
-Difficulty = Literal["Easy", "Medium", "Hard"]
-
 LANGUAGE_RULES_AR = """
 - استخدم العربية الفصحى مع مصطلحات تقنية إنجليزية شائعة فقط (مثل CNN, Attention, FLOPs)
 - ممنوع تماماً: الأحرف الصينية أو اليابانية أو الكورية أو أي رموز غريبة
@@ -63,9 +59,8 @@ _CODE_ABSTRACTION_BLOCK = """
 """
 
 
-def _deepseek_output_format_section(context: str, difficulty: Difficulty) -> str:
-    """قسم صيغة JSON العربية مع حقل type و difficulty."""
-    diff_json = "hard" if difficulty == "Hard" else "medium | hard"
+def _deepseek_output_format_section(context: str) -> str:
+    """قسم صيغة JSON العربية مع حقل type."""
     return f"""حلّل المحتوى داخلياً دون طباعة التحليل، ثم أخرج الأسئلة **فقط** بصيغة JSON دون أي نص خارج JSON.
 
 {{
@@ -75,8 +70,7 @@ def _deepseek_output_format_section(context: str, difficulty: Difficulty) -> str
       "options": ["", "", "", ""],
       "answer": "الإجابة الصحيحة (نص الخيار)",
       "solution": "تفسير مختصر وواثق (خطوتان كحد أقصى للحساب)",
-      "type": "understanding | analysis | computation | application",
-      "difficulty": "{diff_json}"
+      "type": "understanding | analysis | computation | application"
     }}
   ]
 }}
@@ -93,10 +87,9 @@ UPLOADED DOCUMENT:
 
 def build_deepseek_prompt(
     context: str,
-    difficulty: Difficulty,
     num_questions: int | None = None,
 ) -> str:
-    """تجميع prompt المستخدم الكامل لطلب توليد MCQ من مقطع واحد."""
+    """تجميع prompt المستخدم الكامل لطلب توليد MCQ صعبة من مقطع واحد."""
     count_line = (
         f"أخرج **بالضبط {num_questions}** سؤال MCQ من هذا الجزء فقط — لا أكثر ولا أقل."
         if num_questions
@@ -113,12 +106,6 @@ def build_deepseek_prompt(
             f"**لا** تملأ الباقي بأسئلة طرح أو تعويض ميكانيكي."
         )
 
-    difficulty_block = (
-        "اجعل **كل** الأسئلة بمستوى `hard` في JSON."
-        if difficulty == "Hard"
-        else "اجعل مستوى الصعوبة medium أو hard."
-    )
-
     return f"""أنت خبير في تصميم أسئلة الامتحانات الجامعية.
 مهمتك: أسئلة امتحان **صعبة** من **هذا الجزء** فقط — كما يضعها أستاذ جامعي (فهم + استدلال + حساب عند الحاجة).
 
@@ -132,7 +119,7 @@ def build_deepseek_prompt(
 
 {count_line}
 {mix_line}
-- {difficulty_block}
+- **كل** الأسئلة بمستوى امتحان جامعي **صعب** — لا أسئلة سهلة أو متوسطة.
 - لا تكرّر نفس الفكرة أو نفس «مهارة الحساب» بأرقام مختلفة فقط.
 
 ========================
@@ -163,7 +150,7 @@ MCQ: أربعة خيارات، مشتتات منطقية، `solution` قصير �
 المخرجات
 ========================
 
-{_deepseek_output_format_section(context, difficulty)}"""
+{_deepseek_output_format_section(context)}"""
 
 
 SYSTEM_MESSAGES = {

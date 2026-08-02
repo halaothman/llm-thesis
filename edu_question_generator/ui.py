@@ -22,8 +22,6 @@ from edu_question_generator.generator import detect_lang
 from edu_question_generator.loaders import load_text
 from edu_question_generator.pipeline import generate_from_document
 
-DIFFICULTY = "Hard"  # مستوى الصعوبة الافتراضي
-
 # CSS مخصّص لتبويب Edu في app.py
 _EDU_STYLES = """
 <style>
@@ -310,7 +308,6 @@ def render_edu_app() -> None:
                     payload, run_meta = generate_from_document(
                         text=text,
                         lang=lang,
-                        difficulty=DIFFICULTY,
                         model=get_deepseek_model(),
                         api_key=api_key,
                         progress_callback=on_pipeline_progress,
@@ -353,7 +350,7 @@ def render_edu_app() -> None:
                     )
                     st.stop()
 
-                df = questions_to_dataframe(payload, default_difficulty=DIFFICULTY)
+                df = questions_to_dataframe(payload)
                 st.session_state["edu_questions_df"] = df
                 st.session_state["edu_last_filename"] = os.path.splitext(uploaded.name)[0]
                 st.session_state["edu_run_meta"] = run_meta

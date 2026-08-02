@@ -20,9 +20,8 @@ _COLUMNS = [
 ]
 
 
-def questions_to_dataframe(payload: dict, default_difficulty: str = "Medium") -> pd.DataFrame:
+def questions_to_dataframe(payload: dict) -> pd.DataFrame:
     """تحويل payload['mcq'] إلى جدول للعرض والتصدير."""
-    del default_difficulty
     rows: list[dict] = []
 
     for index, item in enumerate(payload.get("mcq", []), start=1):
