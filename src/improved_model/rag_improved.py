@@ -25,11 +25,11 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
         index_path: مسار ملف الفهرس
         meta_path: مسار ملف الميتاداتا
         query: نص الاستعلام
-        top_k: عدد النتائج المطلوبة (افتراضي: 10 - Improved)
+        top_k: عدد مرشّحي FAISS قبل Re-ranking (افتراضي: 10)
         thr: عتبة التشابه (افتراضي: 0.65 - Improved)
     
     Returns:
-        list: قائمة المقاطع المسترجعة (text, filename, score, id, metadata)
+        list: أفضل IMPROVED_RERANK_TOP_K مقاطع بعد Re-ranking
     """
     if not query.strip():
         return []
@@ -37,8 +37,8 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
     # تحويل الاستعلام إلى تضمين (is_query=True للبحث)
     qv = embed_texts([query], is_query=True)
     
-    # البحث في الفهرس (نسترجع أكثر من المطلوب ثم Re-ranking)
-    scores, ids = search(index_path, qv, top_k * 2)
+    # FAISS: top-10 ثم Re-ranking يختار أفضل 5
+    scores, ids = search(index_path, qv, top_k)
     
     # تحميل الميتاداتا
     meta = load_meta(meta_path)
@@ -80,6 +80,5 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
                 "metadata": meta_dict,
             })
     
-    results = rerank(query, results, top_k=IMPROVED_RERANK_TOP_K)
-    return results[:top_k]
+    return rerank(query, results, top_k=IMPROVED_RERANK_TOP_K)
 
