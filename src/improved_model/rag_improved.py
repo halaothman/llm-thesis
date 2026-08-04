@@ -15,12 +15,11 @@ from ..faiss_store import search, load_meta
 IMPROVED_TOP_K = 10
 IMPROVED_THRESHOLD = 0.65
 IMPROVED_RERANK_TOP_K = 5  # عدد النتائج بعد Re-ranking
-USE_RERANKING = True  # تفعيل/تعطيل Re-ranking
 
-def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_TOP_K, thr: float = IMPROVED_THRESHOLD, use_reranking: bool = USE_RERANKING):
+def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_TOP_K, thr: float = IMPROVED_THRESHOLD):
     """
     استرجاع المقاطع المشابهة من الفهرس - Improved (النسخة المحسّنة)
-    مع Re-ranking
+    مع Re-ranking دائماً
     
     Args:
         index_path: مسار ملف الفهرس
@@ -28,7 +27,6 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
         query: نص الاستعلام
         top_k: عدد النتائج المطلوبة (افتراضي: 10 - Improved)
         thr: عتبة التشابه (افتراضي: 0.65 - Improved)
-        use_reranking: استخدام Re-ranking (افتراضي: True)
     
     Returns:
         list: قائمة المقاطع المسترجعة (text, filename, score, id, metadata)
@@ -39,9 +37,8 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
     # تحويل الاستعلام إلى تضمين (is_query=True للبحث)
     qv = embed_texts([query], is_query=True)
     
-    # البحث في الفهرس (نسترجع أكثر من المطلوب للـ re-ranking)
-    initial_top_k = top_k * 2 if use_reranking else top_k
-    scores, ids = search(index_path, qv, initial_top_k)
+    # البحث في الفهرس (نسترجع أكثر من المطلوب ثم Re-ranking)
+    scores, ids = search(index_path, qv, top_k * 2)
     
     # تحميل الميتاداتا
     meta = load_meta(meta_path)
@@ -83,10 +80,6 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
                 "metadata": meta_dict,
             })
     
-    # تطبيق Re-ranking إذا كان مفعلاً
-    if use_reranking and len(results) > 1:
-        results = rerank(query, results, top_k=IMPROVED_RERANK_TOP_K)
-    
-    # إرجاع top_k النهائي
+    results = rerank(query, results, top_k=IMPROVED_RERANK_TOP_K)
     return results[:top_k]
 
