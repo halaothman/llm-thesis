@@ -8,6 +8,7 @@ from typing import Literal, Optional
 import ollama
 from langdetect import detect
 
+# رسالة النظام المشتركة بين Vanilla و RAG (قواعد JSON، MCQ، TF)
 SYS_AR = (
     "أنت معلّم خبير في إنشاء الأسئلة. مهمتك: إنشاء أكبر عدد ممكن من الأسئلة المختلفة "
     "والدقيقة من النص المعطى (بحد أقصى 20 سؤال). يجب أن تكون الأسئلة مزيجاً من أسئلة "
@@ -19,10 +20,12 @@ SYS_AR = (
     "في أسئلة الصح/الخطأ. أعد JSON فقط بدون أي نص إضافي."
 )
 
+# رفض خيارات placeholder مثل «خيار 1» أو «option 2»
 _GENERIC_OPTION = re.compile(
     r"^(خيار\s*[1-4]|جواب\s*[1-4]|إجابة\s*[أ-د]|option\s*[1-4]|choice\s*[1-4])$",
     re.I,
 )
+# ممنوع في بداية سؤال صح/خطأ (يجب «هل» أو جملة خبرية)
 _TF_INTERROGATIVE = (
     "من",
     "أين",
@@ -40,6 +43,8 @@ _TF_INTERROGATIVE = (
     "which",
 )
 
+# ── اكتشاف اللغة وبناء البرومبت ──────────────────────────────────────────────
+
 def detect_lang(text: str) -> Literal["ar", "en"]:
     """اكتشاف لغة النص (للعرض والتقييم — البرومبت عربي دائماً)."""
     try:
@@ -49,8 +54,8 @@ def detect_lang(text: str) -> Literal["ar", "en"]:
 
 
 def build_prompt_vanilla(text: str, lang: str = "ar") -> str:
-    """برومبت Vanilla — عربي فقط."""
-    del lang
+    """برومبت Vanilla: MCQ + TF من الملف المرفوع فقط (بدون RAG)."""
+    del lang  # البرومبت عربي دائماً؛ lang للتوافق مع صفحة التوليد
     return f"""{SYS_AR}
 
 === النص المرفوع (المصدر الوحيد) ===
@@ -90,6 +95,8 @@ def build_prompt_vanilla(text: str, lang: str = "ar") -> str:
 ابدأ الآن:"""
 
 
+# ── دمج نصوص RAG (للبرومبت والمقاييس) ───────────────────────────────────────
+
 def combined_retrieved_text(retrieved: list) -> str:
     """دمج نصوص المقاطع المسترجعة."""
     parts = []
@@ -114,12 +121,13 @@ def combined_rag_source_text(upload_text: str, retrieved: list) -> str:
 
 
 def build_prompt_rag(text: str, lang: str = "ar", retrieved: Optional[list] = None) -> str:
-    """برومبت RAG — عربي فقط."""
+    """برومبت RAG: الملف المرفوع + مقاطع FAISS (أو نص فقط إن لم يُسترجَع شيء)."""
     del lang
     retrieved = retrieved or []
     has_rag = bool(retrieved)
 
     if has_rag:
+        # تنسيق كل مقطع مسترج: اسم ملف + رقم مقطع + أول 500 حرف
         retrieved_texts = []
         for i, r in enumerate(retrieved, 1):
             passage_text = r["text"][:500]
@@ -142,6 +150,7 @@ def build_prompt_rag(text: str, lang: str = "ar", retrieved: Optional[list] = No
         instruction_1 = "1. **استخدم المعلومات من النص الأساسي والمصادر الإضافية معاً** لإنشاء أسئلة دقيقة وعميقة. ابدأ بالنص الأساسي كأساس، ثم استخدم المصادر الإضافية لإثراء الخيارات والمعلومات"
         instruction_2 = "2. **لكل سؤال اختيار من متعدد:** استخرج الخيارات من **جميع المصادر المتاحة** (النص الأساسي + المصادر الإضافية). يمكن أن تأتي الخيارات من أي من المصادر المتاحة، لكن يجب أن تكون جميعها حقيقية ومحددة من المحتوى"
     else:
+        # بدون مقاطع مسترجعة: نفس منطق Vanilla لكن بصياغة «المحتوى المتاح»
         combined_context = f"""=== المحتوى المتاح ===
 {text}
 """
@@ -194,7 +203,10 @@ def build_prompt_rag(text: str, lang: str = "ar", retrieved: Optional[list] = No
 ابدأ الآن:"""
 
 
+# ── استدعاء Ollama ────────────────────────────────────────────────────────────
+
 def _extract_chat_response(resp) -> str:
+    """استخراج نص content من رد Ollama (كائن أو dict)."""
     content = ""
     if hasattr(resp, "message"):
         content = getattr(resp.message, "content", None) or ""
@@ -230,7 +242,7 @@ def call_llama(
     temperature: float = 0.7,
     json_mode: bool = True,
 ) -> str:
-    """استدعاء Ollama مع إعادة المحاولة."""
+    """استدعاء Ollama مع إعادة المحاولة؛ json_mode يفرض format=json."""
     check_and_pull_model(model_name)
     for attempt in range(max_retries):
         try:
@@ -258,12 +270,15 @@ def call_llama(
     return ""
 
 
+# ── التحقق من الجودة وإزالة التكرار ─────────────────────────────────────────
+
 def _similarity(a: str, b: str) -> float:
+    """نسبة تشابه نصّي بين سؤالين (SequenceMatcher)."""
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 
 def validate_question(question_data: dict, question_type: str, _source_text: str = "") -> tuple[bool, list[str]]:
-    """التحقق من MCQ (4 خيارات، لا generic) أو TF (لا أداة استفهام)."""
+    """التحقق من MCQ (4 خيارات، لا placeholder) أو TF (لا أداة استفهام في البداية)."""
     errors = []
     if question_type == "mcq":
         options = question_data.get("options", [])
@@ -292,52 +307,47 @@ def validate_question(question_data: dict, question_type: str, _source_text: str
     return len(errors) == 0, errors
 
 
+def _dedupe_similar_questions(items: list) -> list:
+    """إزالة أسئلة متشابهة جداً (>85%) ضمن قائمة واحدة."""
+    unique, seen = [], []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        q = str(item.get("q", "")).strip()
+        if any(_similarity(q, s) > 0.85 for s in seen):
+            continue
+        seen.append(q.lower())
+        unique.append(item)
+    return unique
+
+
 def remove_duplicate_questions(result: dict) -> dict:
-    """إزالة أسئلة متشابهة جداً (>85%)."""
-    if "mcq" in result and isinstance(result["mcq"], list):
-        unique, seen = [], []
-        for mcq in result["mcq"]:
-            if not isinstance(mcq, dict):
-                continue
-            q = str(mcq.get("q", "")).strip()
-            if any(_similarity(q, s) > 0.85 for s in seen):
-                continue
-            seen.append(q.lower())
-            unique.append(mcq)
-        result["mcq"] = unique
-    if "tf" in result and isinstance(result["tf"], list):
-        unique, seen = [], []
-        for tf in result["tf"]:
-            if not isinstance(tf, dict):
-                continue
-            q = str(tf.get("q", "")).strip()
-            if any(_similarity(q, s) > 0.85 for s in seen):
-                continue
-            seen.append(q.lower())
-            unique.append(tf)
-        result["tf"] = unique
+    """إزالة أسئلة MCQ/TF المتشابهة جداً (>85%)."""
+    for key in ("mcq", "tf"):
+        items = result.get(key)
+        if isinstance(items, list):
+            result[key] = _dedupe_similar_questions(items)
     return result
 
 
 def postprocess_questions(result: dict) -> dict:
-    """إزالة التكرار وحذف الأسئلة غير الصالحة """
+    """إزالة التكرار وحذف الأسئلة غير الصالحة."""
     result = remove_duplicate_questions(result)
-    if isinstance(result.get("mcq"), list):
-        result["mcq"] = [
-            q
-            for q in result["mcq"]
-            if isinstance(q, dict) and validate_question(q, "mcq")[0]
-        ]
-    if isinstance(result.get("tf"), list):
-        result["tf"] = [
-            q
-            for q in result["tf"]
-            if isinstance(q, dict) and validate_question(q, "tf")[0]
-        ]
+    for qtype in ("mcq", "tf"):
+        items = result.get(qtype)
+        if isinstance(items, list):
+            result[qtype] = [
+                q
+                for q in items
+                if isinstance(q, dict) and validate_question(q, qtype)[0]
+            ]
     return result
 
 
+# ── تحليل JSON وتوحيد الحقول ─────────────────────────────────────────────────
+
 def _ensure_mcq_options(result: dict) -> None:
+    """ضمان 4 خيارات لكل MCQ (حشو placeholder إن نقصت)."""
     for mcq in result.get("mcq") or []:
         if not isinstance(mcq, dict):
             continue
@@ -351,6 +361,7 @@ def _ensure_mcq_options(result: dict) -> None:
 
 
 def _repair_json_text(s: str) -> str:
+    """إصلاح JSON مقطوع: إزالة markdown، إغلاق أقواس/فواصل ناقصة."""
     s = re.sub(r"```json|```", "", s, flags=re.I).strip()
     if s.count("{") > s.count("}"):
         s += "}" * (s.count("{") - s.count("}"))
@@ -378,6 +389,7 @@ def _extract_json_blob(raw: str) -> str:
 
 
 def _loads_questions(raw: str) -> Optional[dict]:
+    """محاولة json.loads على النص الخام، المستخرج، أو المُصلَح."""
     for candidate in (raw, _extract_json_blob(raw), _repair_json_text(_extract_json_blob(raw))):
         if not candidate:
             continue
@@ -389,6 +401,7 @@ def _loads_questions(raw: str) -> Optional[dict]:
 
 
 def _normalize_question_item(item: dict, qtype: str) -> Optional[dict]:
+    """توحيد حقول سؤال واحد (q/options/answer) مع أسماء بديلة شائعة."""
     if not isinstance(item, dict):
         return None
     q = (item.get("q") or item.get("question") or "").strip()
@@ -413,6 +426,15 @@ def _normalize_question_item(item: dict, qtype: str) -> Optional[dict]:
             elif low in ("false", "خطأ", "خطا", "no", "لا"):
                 out["answer"] = False
     return out
+
+
+def _normalize_question_list(items, qtype: str) -> list:
+    """توحيد قائمة أسئلة mcq أو tf."""
+    return [
+        norm
+        for item in (items or [])
+        if (norm := _normalize_question_item(item, qtype))
+    ]
 
 
 def _coerce_question_payload(result: dict) -> dict:
@@ -443,22 +465,13 @@ def _coerce_question_payload(result: dict) -> dict:
         if alt_tf in result and "tf" not in result:
             result["tf"] = result.pop(alt_tf)
 
-    mcq = [
-        norm
-        for item in (result.get("mcq") or [])
-        if (norm := _normalize_question_item(item, "mcq"))
-    ]
-    tf = [
-        norm
-        for item in (result.get("tf") or [])
-        if (norm := _normalize_question_item(item, "tf"))
-    ]
-    result["mcq"] = mcq
-    result["tf"] = tf
+    for qtype in ("mcq", "tf"):
+        result[qtype] = _normalize_question_list(result.get(qtype), qtype)
     return _normalize_question_payload(result)
 
 
 def _normalize_question_payload(result: dict) -> dict:
+    """ضمان وجود قوائم mcq و tf (حتى لو فارغة)."""
     if not isinstance(result.get("mcq"), list):
         result["mcq"] = []
     if not isinstance(result.get("tf"), list):
@@ -473,8 +486,8 @@ def safe_json(
     lang: str = "ar",
     retrieved: Optional[list] = None,
 ):
-    """تحليل JSON من استجابة النموذج مع معالجة لاحقة."""
-    del source_text, model_name, lang, retrieved  # kept for call-site compatibility
+    """تحليل JSON من استجابة النموذج → توحيد → تحقق → إزالة تكرار."""
+    del source_text, model_name, lang, retrieved  # للتوافق مع مواقع الاستدعاء
     if not s or not s.strip():
         return None
     result = _loads_questions(s)
@@ -487,6 +500,8 @@ def safe_json(
         return None
     return result
 
+
+# ── نقطة الدخول: توليد مع إعادة المحاولة ────────────────────────────────────
 
 def generate_questions_with_retry(
     prompt: str,
