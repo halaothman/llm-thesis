@@ -1,13 +1,19 @@
-"""حساب المقاييس الآلية (عربي فقط): BLEU و BERTScore و Perplexity و F1."""
+"""حساب المقاييس الآلية (عربي فقط): BLEU و BERTScore و Perplexity و F1.
+
+يُستدعى من storage.py عند حفظ الأسئلة في outputs/.
+candidate = نص السؤال المُولَّد، reference = النص المصدر (source_text).
+"""
 import math
 import re
 
+# نموذج BERTScore — متعدد اللغات ويدعم العربية
 _AR_BERT_MODEL = "bert-base-multilingual-cased"
+# نموذج Perplexity — GPT-2 عربي
 _AR_PPL_MODEL = "aubmindlab/araGPT2-base"
 
 
 def _default_metrics() -> dict:
-    """قيم افتراضية لجميع المقاييس."""
+    """قيم صفرية عند غياب النص أو فشل الحساب."""
     return {
         "bleu": 0.0,
         "bert_score": 0.0,
@@ -19,7 +25,7 @@ def _default_metrics() -> dict:
 
 
 def perplexity_list(texts):
-    """حساب perplexity للنصوص العربية عبر araGPT2."""
+    """حساب Perplexity لكل نص — كلما انخفضت القيمة كان النص «أكثر طبيعية» للنموذج."""
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM
         import torch
@@ -36,6 +42,7 @@ def perplexity_list(texts):
 
         ppl = []
         for t in texts:
+            # نص قصير جداً لا يُعطي loss موثوق
             if not t or len(t.strip()) < 3:
                 ppl.append(0.0)
                 continue
@@ -57,6 +64,7 @@ def perplexity_list(texts):
                     outputs = mdl(**enc, labels=enc["input_ids"])
                     loss = outputs.loss
                     perplexity = math.exp(loss.item())
+                    # قيم شاذة جداً → 0.0 (فشل/عدم ثقة)
                     if perplexity >= 1000.0:
                         ppl.append(0.0)
                     else:
@@ -65,11 +73,13 @@ def perplexity_list(texts):
                 ppl.append(0.0)
         return ppl
     except Exception:
+        # فشل تحميل النموذج — صفر لكل مدخل
         return [0.0] * len(texts)
 
 
 def tokenize_arabic(text):
-    """تقسيم النص العربي إلى كلمات."""
+    """تقسيم النص إلى كلمات عربية (لـ Precision/Recall/F1)."""
+    # إبقاء الحروف العربية والمسافات فقط
     text = re.sub(
         r"[^\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\s]",
         " ",
@@ -79,18 +89,18 @@ def tokenize_arabic(text):
 
 
 def normalize_text_for_perplexity(text):
-    """تطبيع النص العربي لحساب Perplexity."""
+    """تنظيف السؤال قبل إدخاله لـ araGPT2."""
     if not text:
         return ""
 
     text = re.sub(r"[^\u0600-\u06FF\s]", " ", text)
-    text = re.sub(r"\b[A-Za-z]+\b", "[اسم]", text)
+    text = re.sub(r"\b[A-Za-z]+\b", "[اسم]", text)  # مصطلحات لاتينية → placeholder
     text = re.sub(r"\d+", "[رقم]", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
 def calculate_bleu_score(candidate, reference):
-    """حساب BLEU score."""
+    """BLEU: تشابه n-gram بين السؤال والمصدر (0–1)."""
     try:
         from sacrebleu import BLEU
 
@@ -99,13 +109,13 @@ def calculate_bleu_score(candidate, reference):
 
         bleu = BLEU(effective_order=True)
         score = bleu.sentence_score(candidate, [reference])
-        return score.score / 100.0
+        return score.score / 100.0  # sacrebleu يُرجع 0–100
     except Exception:
         return 0.0
 
 
 def calculate_bert_score(candidate, reference):
-    """حساب BERTScore (نموذج multilingual للعربية)."""
+    """BERTScore: تشابه دلالي عبر embeddings — نُخزّن F1 فقط."""
     try:
         from bert_score import score as bert_score
 
@@ -128,7 +138,7 @@ def calculate_bert_score(candidate, reference):
 
 
 def calculate_precision_recall_f1(candidate, reference):
-    """حساب Precision, Recall, F1 على tokens عربية."""
+    """تداخل كلمات عربية بين السؤال والمصدر (bag-of-words)."""
     try:
         if not candidate or not reference:
             return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
@@ -143,7 +153,9 @@ def calculate_precision_recall_f1(candidate, reference):
         reference_set = set(reference_tokens)
         intersection = candidate_set.intersection(reference_set)
 
+        # precision: كم من كلمات السؤال وُجدت في المصدر
         precision = len(intersection) / len(candidate_set) if candidate_set else 0.0
+        # recall: كم من كلمات المصدر ظهرت في السؤال
         recall = len(intersection) / len(reference_set) if reference_set else 0.0
         f1_score = (
             2 * (precision * recall) / (precision + recall)
@@ -157,7 +169,15 @@ def calculate_precision_recall_f1(candidate, reference):
 
 
 def calculate_all_metrics(question_text, source_text):
-    """حساب جميع المقاييس للسؤال العربي."""
+    """نقطة الدخول: حساب الستة مقاييس لسؤال واحد مقابل source_text.
+
+    Args:
+        question_text: نص السؤال المُولَّد.
+        source_text: النص المرجعي (ملف Vanilla أو ملف+RAG).
+
+    Returns:
+        dict: bleu, bert_score (F1), precision, recall, f1_score, perplexity.
+    """
     if not question_text or not source_text:
         return _default_metrics()
 
