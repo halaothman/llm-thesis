@@ -89,7 +89,12 @@ def build_deepseek_prompt(
     context: str,
     num_questions: int | None = None,
 ) -> str:
-    """تجميع prompt المستخدم الكامل لطلب توليد MCQ صعبة من مقطع واحد."""
+    """تجميع prompt المستخدم لتوليد MCQ صعبة من مقطع واحد.
+
+    Args:
+        context: نص المقطع المرفوع.
+        num_questions: العدد المطلوب؛ None = حتى 3 أسئلة.
+    """
     count_line = (
         f"أخرج **بالضبط {num_questions}** سؤال MCQ من هذا الجزء فقط — لا أكثر ولا أقل."
         if num_questions
@@ -168,5 +173,5 @@ SYSTEM_MESSAGES = {
 
 
 def build_deepseek_system_message(lang: str) -> str:
-    """رسالة system حسب لغة المستند (ar/en)."""
+    """رسالة system حسب لغة المستند (ar → عربي، غير ذلك → إنجليزي)."""
     return SYSTEM_MESSAGES["ar" if lang == "ar" else "en"]

@@ -42,8 +42,7 @@ def _records_for_file(path: str, f: str) -> list[dict]:
         return []
 
     text = clean_ar(text)
-    stemmed = stem_ar(text)
-    chunks = chunk_text(stemmed, 500, 100)
+    chunks = chunk_text(text, 500, 100)
     is_improved = get_rag_version() == "improved"
 
     records = []
@@ -54,6 +53,7 @@ def _records_for_file(path: str, f: str) -> list[dict]:
         metadata = {
             "source": path,
             "filename": f,
+            "chunk_index": chunk_idx + 1,
             "chunk_size": len(ch),
         }
         if is_improved:
@@ -72,7 +72,14 @@ def _records_for_file(path: str, f: str) -> list[dict]:
                     "file_type": os.path.splitext(f)[1].lower(),
                 }
             )
-        records.append({"id": rid, "text": ch, "metadata": metadata})
+        records.append(
+            {
+                "id": rid,
+                "text": ch,
+                "embed_text": stem_ar(ch),
+                "metadata": metadata,
+            }
+        )
     return records
 
 

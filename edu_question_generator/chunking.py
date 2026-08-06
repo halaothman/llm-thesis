@@ -36,7 +36,7 @@ def build_segments(
     overlap: int = CHUNK_OVERLAP,
     max_segment_chars: int = LOGICAL_SEGMENT_MAX_CHARS,
 ) -> list[str]:
-    """دمج قطع صغيرة في مقاطع لا تتجاوز max_segment_chars (مسار legacy)."""
+    """دمج قطع صغيرة في مقاطع لا تتجاوز max_segment_chars (fallback داخلي)."""
     chunks = chunk_text(text, size=size, overlap=overlap)
     if not chunks:
         return []
@@ -144,7 +144,17 @@ def build_logical_segments(
     max_segment_chars: int = LOGICAL_SEGMENT_MAX_CHARS,
     min_segment_chars: int = 800,
 ) -> list[str]:
-    """المقطع المنطقي: عناوين → وإلا أجزاء متساوية → حد أقصى للعدد والحجم."""
+    """تقسيم منطقي: عناوين → وإلا أجزاء متساوية → حد أقصى للعدد والحجم.
+
+    Args:
+        text: نص المستند الكامل.
+        max_segments: أقصى عدد مقاطع (افتراضي MAX_LOGICAL_SEGMENTS).
+        max_segment_chars: حد أقصى لحروف كل مقطع.
+        min_segment_chars: حد أدنى لدمج المقاطع القصيرة جداً.
+
+    Returns:
+        قائمة مقاطع جاهزة للتوليد.
+    """
     cleaned = text.strip()
     if not cleaned:
         return []

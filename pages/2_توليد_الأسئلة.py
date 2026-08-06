@@ -18,6 +18,7 @@ try:
     from src.generator import (
         build_prompt_rag,
         build_prompt_vanilla,
+        combined_rag_source_text,
         call_llama,
         detect_lang,
         generate_questions_with_retry,
@@ -43,8 +44,8 @@ TEMPERATURE = 0.7
 MAX_RETRIES = 3
 
 RAG_SETTINGS = {
-    "baseline": {"label": "Baseline (الأصلية)", "threshold": 0.82},
-    "improved": {"label": "Improved (المحسّنة)", "threshold": 0.65},
+    "baseline": {"label": "Baseline (الأصلية)", "threshold": 0.82, "top_k": 5},
+    "improved": {"label": "Improved (المحسّنة)", "threshold": 0.65, "top_k": 10},
 }
 
 
@@ -52,17 +53,40 @@ def rag_settings_for_version(version: str) -> dict:
     return RAG_SETTINGS.get(version, RAG_SETTINGS["baseline"])
 
 
-def format_rag_source_line(source: dict, version: str) -> str:
+def _rag_chunk_index(source: dict) -> Optional[int]:
+    chunk = source.get("chunk_index")
+    if chunk is None:
+        chunk = (source.get("metadata") or {}).get("chunk_index")
+    if chunk is None:
+        return None
+    try:
+        return int(chunk)
+    except (TypeError, ValueError):
+        return None
+
+
+def format_rag_source_line(source: dict, version: str, *, rank: Optional[int] = None) -> str:
     name = source.get("filename", "—")
+    if name and ("/" in name or "\\" in name):
+        name = os.path.basename(name)
+    chunk = _rag_chunk_index(source)
+    chunk_label = f"مقطع {chunk}" if chunk is not None else "مقطع —"
+    prefix = f"{rank}. " if rank is not None else "- "
     if version == "improved" and "rerank_score" in source:
         faiss = source.get("original_score", source.get("score", 0))
         rerank = source.get("rerank_score", source.get("score", 0))
         return (
-            f"- `{name}` "
+            f"{prefix}**{chunk_label}** · `{name}` "
             f"(تشابه FAISS: {faiss:.2f} · إعادة ترتيب: {rerank:.2f})"
         )
     score = source.get("score", 0)
-    return f"- `{name}` (تشابه FAISS: {score:.2f})"
+    return f"{prefix}**{chunk_label}** · `{name}` (تشابه FAISS: {score:.2f})"
+
+
+def display_retrieved_sources(sources: list[dict], version: str) -> None:
+    """عرض المقاطع المسترجعة مع رقم المقطع واسم الملف."""
+    for rank, source in enumerate(sources, 1):
+        st.markdown(format_rag_source_line(source, version, rank=rank))
 
 
 def ollama_model_names() -> List[str]:
@@ -206,11 +230,21 @@ def run_rag(
 ) -> None:
     with st.spinner("جاري الاسترجاع وتوليد الأسئلة (RAG)..."):
         try:
-            query = clean_ar(raw_text)
-            retrieved = retrieve(idx_path, meta_path, query)
+            version = get_rag_version()
+            cfg = rag_settings_for_version(version)
+
+            if version == "baseline":
+                retrieved = retrieve(
+                    idx_path,
+                    meta_path,
+                    raw_text,
+                    top_k=cfg["top_k"],
+                    thr=cfg["threshold"],
+                )
+            else:
+                retrieved = retrieve(idx_path, meta_path, raw_text)
+
             if not retrieved:
-                version = get_rag_version()
-                cfg = rag_settings_for_version(version)
                 st.error("لم يُعثر على مقاطع مشابهة بدرجة كافية في الفهرس.")
                 st.info(
                     f"عتبة النسخة الحالية ({cfg['label']}): {cfg['threshold']}. "
@@ -218,9 +252,16 @@ def run_rag(
                 )
                 return
 
+            st.markdown("**المقاطع المسترجعة:**")
+            display_retrieved_sources(retrieved, version)
+
+            rag_source_text = combined_rag_source_text(raw_text, retrieved)
             prompt = build_prompt_rag(raw_text, lang, retrieved)
+
             start = time.time()
-            out = parse_llm_questions(prompt, raw_text, model_name, lang, retrieved=retrieved)
+            out = parse_llm_questions(
+                prompt, rag_source_text, model_name, lang, retrieved=retrieved
+            )
             if out is None:
                 st.error(
                     "فشل توليد الأسئلة أو تنسيق JSON. "
@@ -229,13 +270,24 @@ def run_rag(
                 return
 
             out["sources"] = retrieved
-            out["source_text"] = raw_text
+            out["source_text"] = rag_source_text
+            out["upload_file"] = upload_name
             out["generation_time"] = time.time() - start
 
             st.caption(
                 f"مقاطع RAG: {len(retrieved)} — عدد الأسئلة: {count_llm_questions(out)} — "
                 f"الوقت: {out['generation_time']:.1f} ث"
             )
+            if version == "baseline":
+                st.caption(
+                    f"Baseline: FAISS top-{cfg['top_k']} → عتبة {cfg['threshold']} — "
+                    "التوليد من الملف المرفوع + المقاطع المسترجعة (بدون إعادة ترتيب)."
+                )
+            else:
+                st.caption(
+                    f"Improved: FAISS → عتبة {cfg['threshold']} → top-{cfg['top_k']} → "
+                    f"re-rank top-5 — التوليد من الملف المرفوع + المقاطع المسترجعة."
+                )
             st.session_state.rag_questions = out
             st.session_state.rag_generated = True
             st.session_state.rag_saved = False
@@ -305,6 +357,11 @@ with st.sidebar:
 
     st.caption(rag_settings_for_version(get_rag_version())["label"])
     st.caption(f"التضمين: `{get_model_name()}`")
+    cfg = rag_settings_for_version(get_rag_version())
+    if get_rag_version() == "baseline":
+        st.caption(f"FAISS top-{cfg['top_k']} · عتبة {cfg['threshold']} · بدون re-ranking")
+    else:
+        st.caption(f"عتبة {cfg['threshold']} · top-{cfg['top_k']} فوق العتبة · re-rank → 5")
 
     if st.session_state.get("selected_model"):
         st.metric("النموذج المختار", st.session_state.selected_model)
@@ -389,8 +446,8 @@ if st.session_state.get("rag_generated"):
     sources = rag_out.get("sources") or []
     if sources:
         version = get_rag_version()
-        lines = [format_rag_source_line(s, version) for s in sources[:8]]
-        st.markdown("**مصادر RAG:**\n" + "\n".join(lines))
+        st.markdown("**مصادر RAG:**")
+        display_retrieved_sources(sources[:8], version)
         if version == "improved" and any("rerank_score" in s for s in sources):
             st.caption(
                 "«إعادة ترتيب» درجة صلة من Cross-Encoder وليست نسبة تشابه؛ "

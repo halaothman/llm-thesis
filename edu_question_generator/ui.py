@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import html
-import json
 import os
 import tempfile
 
@@ -96,7 +95,6 @@ def _init_edu_state() -> None:
     defaults = {
         "edu_questions_df": None,
         "edu_last_filename": None,
-        "edu_segment_count": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -151,7 +149,11 @@ def _render_phase_checklist(completed: set[str], current: str) -> str:
 
 
 def make_pipeline_progress_ui():
-    """إنشاء callback تقدم + شريط progress لـ st.status."""
+    """إنشاء callback تقدّم pipeline وشريط progress لـ st.status.
+
+    Returns:
+        tuple: (callback, progress_bar) — يُمرَّر callback إلى generate_from_document.
+    """
     completed_phases: set[str] = set()
     current_phase = "extract"
     log_box = st.empty()
@@ -161,6 +163,7 @@ def make_pipeline_progress_ui():
     log_box.markdown(_render_phase_checklist(completed_phases, current_phase), unsafe_allow_html=True)
 
     def callback(stage: str, data: dict) -> None:
+        """تحديث قائمة المراحل (✓/▸/○) وشريط التقدم عند كل حدث pipeline."""
         nonlocal current_phase
         phase = _stage_phase_key(stage)
         if phase in order:
@@ -288,6 +291,7 @@ def render_edu_app() -> None:
                 tmp_path = tmp.name
 
             def on_pipeline_progress(stage: str, data: dict) -> None:
+                """ربط callback التقدّم بتحديث عنوان st.status."""
                 progress_cb(stage, data)
                 run_status.update(label=pipeline_status_headline(stage, data))
 
@@ -341,13 +345,6 @@ def render_edu_app() -> None:
                         )
                     else:
                         st.error("تعذّر توليد الأسئلة. حاول لاحقاً.")
-                    st.stop()
-                except json.JSONDecodeError:
-                    run_status.update(label="فشل قراءة النتيجة", state="error")
-                    st.error(
-                        "تعذّر قراءة نتيجة التوليد. "
-                        "جرّب مرة أخرى."
-                    )
                     st.stop()
 
                 df = questions_to_dataframe(payload)

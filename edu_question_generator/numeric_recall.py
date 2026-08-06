@@ -68,7 +68,15 @@ def looks_like_multistep_solution(solution: str) -> bool:
 
 
 def is_numeric_recall_from_source(item: dict, source: str) -> bool:
-    """رفض سؤال إذا كانت إجابته رقماً منسوخاً من المصدر بلا اشتقاق."""
+    """هل السؤال «حفظ رقم»؟ أي إجابة رقمية منسوخة من المصدر بلا اشتقاق حقيقي.
+
+    Args:
+        item: عنصر MCQ (q, answer, solution).
+        source: نص المستند المصدر.
+
+    Returns:
+        True إذا يُرفض كسؤال recall رقمي.
+    """
     if not source.strip():
         return False
 

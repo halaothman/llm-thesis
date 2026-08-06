@@ -21,7 +21,7 @@ _COLUMNS = [
 
 
 def questions_to_dataframe(payload: dict) -> pd.DataFrame:
-    """تحويل payload['mcq'] إلى جدول للعرض والتصدير."""
+    """تحويل ``payload['mcq']`` إلى DataFrame بأعمدة العرض والتصدير."""
     rows: list[dict] = []
 
     for index, item in enumerate(payload.get("mcq", []), start=1):
@@ -47,7 +47,7 @@ def questions_to_dataframe(payload: dict) -> pd.DataFrame:
 
 
 def dataframe_to_excel(df: pd.DataFrame) -> bytes:
-    """تسلسل DataFrame إلى ملف xlsx في الذاكرة."""
+    """تصدير DataFrame إلى ملف xlsx في الذاكرة (ورقة Questions)."""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Questions")

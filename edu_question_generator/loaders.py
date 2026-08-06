@@ -59,7 +59,11 @@ def load_docx(path: str) -> str:
 
 
 def load_text(path: str) -> str:
-    """نقطة الدخول: اختيار المحمّل حسب امتداد الملف."""
+    """قراءة المستند: يختار load_pdf أو load_docx أو UTF-8 حسب الامتداد.
+
+    Raises:
+        ValueError: إذا كان امتداد الملف غير مدعوم.
+    """
     ext = os.path.splitext(path)[1].lower()
 
     if ext == ".pdf":

@@ -1,6 +1,7 @@
 """إنشاء فهرس FAISS والبحث فيه مع metadata بصيغة JSONL."""
 import json
 import os
+from typing import Optional
 
 import faiss
 import numpy as np
@@ -23,7 +24,7 @@ def build_index(
     append: bool = True,
 ) -> None:
     """
-    بناء فهرس FAISS من قائمة سجلات [{id, text, metadata}].
+    بناء فهرس FAISS من قائمة سجلات [{id, text, embed_text, metadata}].
 
     append=False: يمسح الفهرس الحالي ثم يكتب من جديد.
     append=True: يضيف إلى الفهرس الموجود (أو ينشئ فهرساً جديداً إن لم يوجد).
@@ -34,8 +35,8 @@ def build_index(
     if not append:
         clear_index(index_path, meta_path)
 
-    texts = [r["text"] for r in records]
-    vecs = embed_texts(texts, is_query=False).astype("float32")
+    embed_texts_list = [r.get("embed_text") or r["text"] for r in records]
+    vecs = embed_texts(embed_texts_list, is_query=False).astype("float32")
     ids = np.array([int(r["id"]) for r in records], dtype="int64")
 
     index = None
@@ -102,3 +103,30 @@ def load_meta(meta_path: str) -> dict:
             except json.JSONDecodeError:
                 continue
     return meta
+
+
+def resolve_chunk_index(meta: dict, record_id: int, meta_inner: dict) -> Optional[int]:
+    """رقم المقطع داخل الملف — من metadata أو ترتيب الفهرسة لنفس المصدر."""
+    explicit = meta_inner.get("chunk_index")
+    if explicit is not None:
+        try:
+            return int(explicit)
+        except (TypeError, ValueError):
+            pass
+
+    filename = meta_inner.get("filename") or ""
+    source = meta_inner.get("source") or ""
+    peer_ids: list[int] = []
+    for rid, rec in meta.items():
+        inner = rec.get("metadata") or {}
+        same_name = filename and inner.get("filename") == filename
+        same_path = source and inner.get("source") == source
+        if same_name or same_path:
+            peer_ids.append(int(rid))
+    if not peer_ids:
+        return None
+    peer_ids.sort()
+    try:
+        return peer_ids.index(int(record_id)) + 1
+    except ValueError:
+        return None

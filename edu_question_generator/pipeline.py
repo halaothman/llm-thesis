@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from typing import Any
 
@@ -29,7 +28,11 @@ from .config import (
     TARGET_QUESTIONS_TOTAL,
 )
 from .generator import Lang, generate_questions
-from .question_selection import cap_and_diversify_mcq, distribute_question_counts
+from .question_selection import (
+    cap_and_diversify_mcq,
+    dedupe_mcq,
+    distribute_question_counts,
+)
 from .validator import filter_mcq_payload
 
 PipelineProgressCallback = Callable[[str, dict[str, Any]], None]  # (stage, بيانات تقدم)
@@ -50,31 +53,8 @@ def _emit_progress(
         callback(stage, payload)
 
 
-def _question_key(item: dict) -> str:
-    """مفتاح إزالة تكرار MCQ (نص + خيارات)."""
-    question = re.sub(r"\s+", " ", str(item.get("q", "")).strip().lower())
-    options = "|".join(
-        re.sub(r"\s+", " ", str(option).strip().lower())
-        for option in item.get("options", [])
-    )
-    return f"{question}::{options}"
-
-
-def dedupe_mcq(items: list[dict]) -> list[dict]:
-    """إزالة أسئلة MCQ مكررة."""
-    deduped: list[dict] = []
-    seen: set[str] = set()
-    for item in items:
-        key = _question_key(item)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        deduped.append(item)
-    return deduped
-
-
 def merge_payloads(payloads: list[dict]) -> dict:
-    """دمج نتائج المقاطع ثم dedupe."""
+    """دمج قوائم mcq من كل مقطع ثم إزالة التكرار."""
     merged: list[dict] = []
     for payload in payloads:
         merged.extend(payload.get("mcq", []))
@@ -129,7 +109,24 @@ def generate_from_document(
     target_questions: int | None = None,
     target_computation_min: int | None = None,
 ) -> tuple[dict, dict]:
-    """نقطة الدخول: مستند كامل → payload نهائي + metadata تشغيل."""
+    """تشغيل pipeline كامل: تقسيم → توليد → دمج → تحقق → اختيار.
+
+    Args:
+        text: نص المستند الكامل.
+        lang: لغة المستند (ar/en).
+        num_questions: ميزانية أسئلة (legacy؛ يُفضّل target_questions).
+        model: معرّف نموذج DeepSeek.
+        api_key: مفتاح API.
+        progress_callback: دالة (stage, data) لتحديث الواجهة.
+        target_questions: هدف العدد النهائي (افتراضي TARGET_QUESTIONS_TOTAL).
+        target_computation_min: حد أدنى لأسئلة الحساب.
+
+    Returns:
+        (payload نهائي, metadata تشغيل).
+
+    Raises:
+        RuntimeError: PIPELINE_ALL_SEGMENTS_FAILED أو أخطاء LLM الحرجة.
+    """
     question_budget = (
         target_questions
         if target_questions is not None
@@ -251,7 +248,6 @@ def generate_from_document(
     filtered = filter_mcq_payload(
         merged,
         text,
-        lang,
         api_key,
         model,
     )

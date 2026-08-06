@@ -8,21 +8,9 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_MAX_TOKENS = int(os.getenv("DEEPSEEK_MAX_TOKENS", "8192"))
 
-# aliases للتوافق مع imports قديمة
-DEEPSEEK_R1_MODEL = DEEPSEEK_MODEL
-DEEPSEEK_R1_MAX_TOKENS = DEEPSEEK_MAX_TOKENS
-# --- تقسيم حرفي ثابت (مسار legacy في build_segments) ---
+# --- تقسيم حرفي ثابت (fallback داخلي في chunking لتقسيم المقاطع الطويلة جداً) ---
 CHUNK_SIZE = 650
 CHUNK_OVERLAP = 100
-
-# حجم المقطع المنطقي عند دمج القطع الصغيرة (~2500–3500 حرف)
-SEGMENT_MIN_CHARS = 2500
-SEGMENT_MAX_CHARS_LIMIT = 3500
-SEGMENT_MAX_CHARS = max(
-    SEGMENT_MIN_CHARS,
-    min(int(os.getenv("SEGMENT_MAX_CHARS", "3000")), SEGMENT_MAX_CHARS_LIMIT),
-)
-MAX_SEGMENTS_PER_RUN = int(os.getenv("MAX_SEGMENTS_PER_RUN", "20"))
 
 # --- أهداف pipeline الامتحان (مستندات كبيرة) ---
 TARGET_QUESTIONS_TOTAL = int(os.getenv("TARGET_QUESTIONS_TOTAL", "20"))
