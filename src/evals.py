@@ -1,6 +1,9 @@
-"""حساب المقاييس الآلية: BLEU و BERTScore و Perplexity و F1 وغيرها على الأسئلة."""
+"""حساب المقاييس الآلية (عربي فقط): BLEU و BERTScore و Perplexity و F1."""
 import math
 import re
+
+_AR_BERT_MODEL = "bert-base-multilingual-cased"
+_AR_PPL_MODEL = "aubmindlab/araGPT2-base"
 
 
 def _default_metrics() -> dict:
@@ -15,20 +18,18 @@ def _default_metrics() -> dict:
     }
 
 
-def perplexity_list(texts, lang):
-    """حساب perplexity للنصوص باستخدام نماذج خفيفة."""
+def perplexity_list(texts):
+    """حساب perplexity للنصوص العربية عبر araGPT2."""
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM
         import torch
 
-        model_id = "aubmindlab/araGPT2-base" if lang == "ar" else "gpt2"
-
-        tok = AutoTokenizer.from_pretrained(model_id)
+        tok = AutoTokenizer.from_pretrained(_AR_PPL_MODEL)
         if tok.pad_token is None:
             tok.pad_token = tok.eos_token
 
         mdl = AutoModelForCausalLM.from_pretrained(
-            model_id,
+            _AR_PPL_MODEL,
             torch_dtype=torch.float32,
             device_map="auto" if torch.cuda.is_available() else None,
         )
@@ -39,7 +40,7 @@ def perplexity_list(texts, lang):
                 ppl.append(0.0)
                 continue
 
-            normalized_text = normalize_text_for_perplexity(t, lang)
+            normalized_text = normalize_text_for_perplexity(t)
             if not normalized_text or len(normalized_text.strip()) < 3:
                 ppl.append(0.0)
                 continue
@@ -77,37 +78,19 @@ def tokenize_arabic(text):
     return text.split()
 
 
-def tokenize_english(text):
-    """تقسيم النص الإنجليزي إلى كلمات."""
-    text = re.sub(r"[^\w\s]", " ", text)
-    return [word.lower() for word in text.split()]
-
-
-def tokenize_text(text, lang="ar"):
-    """تقسيم النص حسب اللغة."""
-    return tokenize_arabic(text) if lang == "ar" else tokenize_english(text)
-
-
-def normalize_text_for_perplexity(text, lang="ar"):
-    """تطبيع النص لحساب Perplexity."""
+def normalize_text_for_perplexity(text):
+    """تطبيع النص العربي لحساب Perplexity."""
     if not text:
         return ""
 
-    if lang == "ar":
-        text = re.sub(r"[^\u0600-\u06FF\s]", " ", text)
-        text = re.sub(r"\b[A-Za-z]+\b", "[اسم]", text)
-        text = re.sub(r"\d+", "[رقم]", text)
-        text = re.sub(r"\s+", " ", text).strip()
-    else:
-        text = re.sub(r"[^\w\s]", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-
-    return text
+    text = re.sub(r"[^\u0600-\u06FF\s]", " ", text)
+    text = re.sub(r"\b[A-Za-z]+\b", "[اسم]", text)
+    text = re.sub(r"\d+", "[رقم]", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def calculate_bleu_score(candidate, reference, lang="ar"):
+def calculate_bleu_score(candidate, reference):
     """حساب BLEU score."""
-    del lang
     try:
         from sacrebleu import BLEU
 
@@ -121,16 +104,20 @@ def calculate_bleu_score(candidate, reference, lang="ar"):
         return 0.0
 
 
-def calculate_bert_score(candidate, reference, lang="ar"):
-    """حساب BERTScore."""
+def calculate_bert_score(candidate, reference):
+    """حساب BERTScore (نموذج multilingual للعربية)."""
     try:
         from bert_score import score as bert_score
 
         if not candidate or not reference:
             return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
-        model_type = "bert-base-multilingual-cased" if lang == "ar" else "bert-base-uncased"
-        p, r, f1 = bert_score([candidate], [reference], model_type=model_type, verbose=False)
+        p, r, f1 = bert_score(
+            [candidate],
+            [reference],
+            model_type=_AR_BERT_MODEL,
+            verbose=False,
+        )
         return {
             "precision": float(p[0]),
             "recall": float(r[0]),
@@ -140,14 +127,14 @@ def calculate_bert_score(candidate, reference, lang="ar"):
         return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
 
-def calculate_precision_recall_f1(candidate, reference, lang="ar"):
-    """حساب Precision, Recall, F1 Score."""
+def calculate_precision_recall_f1(candidate, reference):
+    """حساب Precision, Recall, F1 على tokens عربية."""
     try:
         if not candidate or not reference:
             return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
-        candidate_tokens = tokenize_text(candidate, lang)
-        reference_tokens = tokenize_text(reference, lang)
+        candidate_tokens = tokenize_arabic(candidate)
+        reference_tokens = tokenize_arabic(reference)
 
         if not candidate_tokens or not reference_tokens:
             return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
@@ -169,17 +156,17 @@ def calculate_precision_recall_f1(candidate, reference, lang="ar"):
         return {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
 
-def calculate_all_metrics(question_text, source_text, lang="ar"):
-    """حساب جميع المقاييس للسؤال."""
+def calculate_all_metrics(question_text, source_text):
+    """حساب جميع المقاييس للسؤال العربي."""
     if not question_text or not source_text:
         return _default_metrics()
 
-    bert_scores = calculate_bert_score(question_text, source_text, lang)
-    prf_scores = calculate_precision_recall_f1(question_text, source_text, lang)
-    perplexity_scores = perplexity_list([question_text], lang)
+    bert_scores = calculate_bert_score(question_text, source_text)
+    prf_scores = calculate_precision_recall_f1(question_text, source_text)
+    perplexity_scores = perplexity_list([question_text])
 
     return {
-        "bleu": round(calculate_bleu_score(question_text, source_text, lang), 4),
+        "bleu": round(calculate_bleu_score(question_text, source_text), 4),
         "bert_score": round(bert_scores["f1_score"], 4),
         "precision": round(prf_scores["precision"], 4),
         "recall": round(prf_scores["recall"], 4),

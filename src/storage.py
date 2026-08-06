@@ -140,7 +140,7 @@ def save_questions_separate_file(
 
     def metrics_for(question_text: str) -> dict:
         try:
-            return calculate_all_metrics(question_text, source_text, lang)
+            return calculate_all_metrics(question_text, source_text)
         except Exception as e:
             print(f"خطأ في حساب المقاييس: {e}")
             return default_metrics()
