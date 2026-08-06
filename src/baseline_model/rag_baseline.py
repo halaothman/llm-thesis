@@ -84,10 +84,9 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = BASELINE_
             results.append({
                 "text": metadata.get("text", ""),
                 "filename": filename or source,
-                "chunk_index": chunk_index,
                 "score": score,
                 "id": int(idx),
-                "metadata": meta_inner,
+                "metadata": {**meta_inner, "chunk_index": chunk_index},
             })
     
     return results

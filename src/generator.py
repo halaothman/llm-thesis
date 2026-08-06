@@ -124,9 +124,7 @@ def build_prompt_rag(text: str, lang: str = "ar", retrieved: Optional[list] = No
         for i, r in enumerate(retrieved, 1):
             passage_text = r["text"][:500]
             filename = r.get("filename", "مصدر غير معروف")
-            chunk = r.get("chunk_index")
-            if chunk is None:
-                chunk = (r.get("metadata") or {}).get("chunk_index")
+            chunk = (r.get("metadata") or {}).get("chunk_index")
             chunk_part = f" · مقطع {chunk}" if chunk is not None else ""
             retrieved_texts.append(f"[مصدر {i}: {filename}{chunk_part}]\n{passage_text}")
         combined_context = f"""=== النص الأساسي (المصدر الرئيسي) ===

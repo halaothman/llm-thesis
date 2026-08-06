@@ -53,36 +53,40 @@ def retrieve(index_path: str, meta_path: str, query: str, top_k: int = IMPROVED_
     meta = load_meta(meta_path)
     results = []
 
+    # لا نتائج من FAISS (فهرس فارغ أو بحث فاشل)
     if len(scores) == 0 or len(ids) == 0:
         return results
 
+    # FAISS قد يُرجع قيمة واحدة عند k=1 — نُحوّلها لقائمة للتكرار
     if not hasattr(scores, "__iter__"):
         scores = [scores]
     if not hasattr(ids, "__iter__"):
         ids = [ids]
 
+    # المرور على المرشّحين بترتيب تشابه FAISS (من الأعلى للأقل)
     for score, idx in zip(scores, ids):
+        # -1 = خانة فارغة في FAISS (أقل من k نتائج في الفهرس)
         if idx == -1:
             continue
 
+        # تحويل الدرجة إلى float (numpy scalar أو نص)
         try:
             score = float(score)
         except (ValueError, TypeError):
             continue
 
+        # قبول المقطع فقط إذا تجاوز عتبة Improved (0.65)
         if score >= thr:
             metadata = meta.get(int(idx), {})
             meta_dict = metadata.get("metadata", {})
             chunk_index = resolve_chunk_index(meta, int(idx), meta_dict)
-            meta_dict = {k: v for k, v in meta_dict.items() if k != "chunk_index"}
             source = meta_dict.get("source", "")
             results.append({
-                "text": metadata.get("text", ""),
+                "text": metadata.get("text", ""),  # نص طبيعي للعرض والتوليد
                 "filename": os.path.basename(source) if source else meta_dict.get("filename", ""),
-                "chunk_index": chunk_index,
-                "score": score,
+                "score": score,  # تشابه FAISS قبل re-rank
                 "id": int(idx),
-                "metadata": meta_dict,
+                "metadata": {**meta_dict, "chunk_index": chunk_index},
             })
 
     results = results[:top_k]

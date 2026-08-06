@@ -50,13 +50,13 @@ RAG_SETTINGS = {
 
 
 def rag_settings_for_version(version: str) -> dict:
+    """إعدادات RAG (عتبة، top_k، تسمية) حسب النسخة baseline أو improved."""
     return RAG_SETTINGS.get(version, RAG_SETTINGS["baseline"])
 
 
 def _rag_chunk_index(source: dict) -> Optional[int]:
-    chunk = source.get("chunk_index")
-    if chunk is None:
-        chunk = (source.get("metadata") or {}).get("chunk_index")
+    """استخراج رقم المقطع من metadata مصدر RAG."""
+    chunk = (source.get("metadata") or {}).get("chunk_index")
     if chunk is None:
         return None
     try:
@@ -66,6 +66,7 @@ def _rag_chunk_index(source: dict) -> Optional[int]:
 
 
 def format_rag_source_line(source: dict, version: str, *, rank: Optional[int] = None) -> str:
+    """تنسيق سطر عرض مصدر RAG: رقم المقطع، اسم الملف، ودرجة التشابه."""
     name = source.get("filename", "—")
     if name and ("/" in name or "\\" in name):
         name = os.path.basename(name)
@@ -84,12 +85,13 @@ def format_rag_source_line(source: dict, version: str, *, rank: Optional[int] = 
 
 
 def display_retrieved_sources(sources: list[dict], version: str) -> None:
-    """عرض المقاطع المسترجعة مع رقم المقطع واسم الملف."""
+    """عرض قائمة المقاطع المسترجعة مع رقم المقطع واسم الملف ودرجة التشابه."""
     for rank, source in enumerate(sources, 1):
         st.markdown(format_rag_source_line(source, version, rank=rank))
 
 
 def ollama_model_names() -> List[str]:
+    """قائمة أسماء النماذج المثبتة في Ollama؛ قائمة فارغة عند فشل الاتصال."""
     try:
         import ollama
 
@@ -105,6 +107,7 @@ def ollama_model_names() -> List[str]:
 
 
 def display_questions_with_answers(questions: dict) -> None:
+    """عرض أسئلة MCQ وصح/خطأ مع الخيارات والإجابات في الواجهة."""
     if not questions or not isinstance(questions, dict):
         st.info("لا توجد أسئلة للعرض.")
         return
@@ -150,6 +153,18 @@ def parse_llm_questions(
     lang: str,
     retrieved=None,
 ) -> Optional[dict]:
+    """استدعاء LLM وتحليل JSON؛ مع إعادة محاولة عند فشل التنسيق.
+
+    Args:
+        prompt: نص البرومبت المرسل للنموذج.
+        raw_text: النص المصدر (للمقاييس والإصلاح).
+        model_name: اسم نموذج Ollama.
+        lang: لغة المستند (ar/en).
+        retrieved: مقاطع RAG المسترجعة (None في Vanilla).
+
+    Returns:
+        dict يحتوي mcq و tf، أو None عند الفشل.
+    """
     response = call_llama(prompt, model_name=model_name, temperature=TEMPERATURE)
     out = safe_json(response, raw_text, model_name, lang, retrieved)
     if out is None:
@@ -169,6 +184,7 @@ def parse_llm_questions(
 
 
 def save_output(out: dict, model_name: str, method: str, upload_name: str, lang: str) -> None:
+    """حفظ الأسئلة في ملف JSON منفصل؛ مع fallback إلى outputs/questions.json."""
     try:
         filename, num_questions = save_questions_separate_file(
             out, model_name, method, upload_name, lang,
@@ -191,6 +207,7 @@ def save_output(out: dict, model_name: str, method: str, upload_name: str, lang:
 
 
 def run_vanilla(raw_text: str, upload_name: str, model_name: str, lang: str) -> None:
+    """توليد أسئلة Vanilla من النص المرفوع فقط (بدون RAG)."""
     with st.spinner("جاري توليد الأسئلة (Vanilla)..."):
         try:
             prompt = build_prompt_vanilla(raw_text, lang)
@@ -228,6 +245,7 @@ def run_rag(
     idx_path: str,
     meta_path: str,
 ) -> None:
+    """توليد أسئلة RAG: استرجاع من الفهرس ثم توليد من النص + المقاطع."""
     with st.spinner("جاري الاسترجاع وتوليد الأسئلة (RAG)..."):
         try:
             version = get_rag_version()
