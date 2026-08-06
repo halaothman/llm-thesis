@@ -210,7 +210,7 @@ def run_vanilla(raw_text: str, upload_name: str, model_name: str, lang: str) -> 
     """توليد أسئلة Vanilla من النص المرفوع فقط (بدون RAG)."""
     with st.spinner("جاري توليد الأسئلة (Vanilla)..."):
         try:
-            prompt = build_prompt_vanilla(raw_text, lang)
+            prompt = build_prompt_vanilla(raw_text)
             start = time.time()
             out = parse_llm_questions(prompt, raw_text, model_name, lang, retrieved=None)
             if out is None:
@@ -274,7 +274,7 @@ def run_rag(
             display_retrieved_sources(retrieved, version)
 
             rag_source_text = combined_rag_source_text(raw_text, retrieved)
-            prompt = build_prompt_rag(raw_text, lang, retrieved)
+            prompt = build_prompt_rag(raw_text, retrieved)
 
             start = time.time()
             out = parse_llm_questions(

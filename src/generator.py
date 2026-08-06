@@ -53,9 +53,8 @@ def detect_lang(text: str) -> Literal["ar", "en"]:
         return "ar"
 
 
-def build_prompt_vanilla(text: str, lang: str = "ar") -> str:
+def build_prompt_vanilla(text: str) -> str:
     """برومبت Vanilla: MCQ + TF من الملف المرفوع فقط (بدون RAG)."""
-    del lang  # البرومبت عربي دائماً؛ lang للتوافق مع صفحة التوليد
     return f"""{SYS_AR}
 
 === النص المرفوع (المصدر الوحيد) ===
@@ -120,9 +119,8 @@ def combined_rag_source_text(upload_text: str, retrieved: list) -> str:
     return "\n\n".join(parts)
 
 
-def build_prompt_rag(text: str, lang: str = "ar", retrieved: Optional[list] = None) -> str:
+def build_prompt_rag(text: str, retrieved: Optional[list] = None) -> str:
     """برومبت RAG: الملف المرفوع + مقاطع FAISS (أو نص فقط إن لم يُسترجَع شيء)."""
-    del lang
     retrieved = retrieved or []
     has_rag = bool(retrieved)
 
