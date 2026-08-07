@@ -166,7 +166,7 @@ def compare_group(
                 "mannwhitney_u": round(mw["u"], 4),
                 "p_raw": round(mw["p"], 4),
                 "rank_biserial_r_rb": round(mw["rb"], 4),
-                "effect_magnitude": effect_magnitude(mw["rb"], "en"),
+                "effect_magnitude": effect_magnitude(mw["rb"]),
             }
         )
         p_raw_list.append(mw["p"])

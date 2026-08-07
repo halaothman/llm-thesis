@@ -118,7 +118,7 @@ def build_human_statistical_results(data: dict):
                     "p_raw": mw["p"],
                     "p بعد Holm": None,
                     "Rank-Biserial": round(mw["rb"], 4),
-                    "حجم الأثر": effect_magnitude(mw["rb"], "ar"),
+                    "حجم الأثر": effect_magnitude(mw["rb"]),
                     "القرار": None,
                 }
             )

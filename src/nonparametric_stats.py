@@ -1,20 +1,13 @@
 """Mann-Whitney U، Shapiro-Wilk، rank-biserial، وتصحيح Holm-Bonferroni."""
 from __future__ import annotations
 
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 import numpy as np
 from scipy.stats import mannwhitneyu, shapiro
 
 MIN_SAMPLES_DEFAULT = 3
 MAX_SHAPIRO_N = 5000
-EffectStyle = Literal["en", "ar", "ar_long"]
-
-_EFFECT_LABELS = {
-    "en": ("Small", "Medium", "Large", "Very large"),
-    "ar": ("ضعيف جدًا", "ضعيف", "متوسط", "قوي"),
-    "ar_long": ("تأثير ضعيف جدًا", "تأثير ضعيف", "تأثير متوسط", "تأثير قوي"),
-}
 
 
 def holm_bonferroni(p_values: Sequence[float]) -> np.ndarray:
@@ -61,7 +54,7 @@ def shapiro_normality_label(p: Optional[float], *, alpha: float = 0.05) -> str:
     if p is None:
         return ""
     return "غير طبيعي" if p < alpha else "طبيعي تقريبًا"
-
+#_________________________________________________
 
 def apply_holm_to_rows(
     rows: list[dict],
@@ -73,6 +66,8 @@ def apply_holm_to_rows(
     not_significant_label: str = "غير دال",
     alpha: float = 0.05,
 ) -> None:
+#_________________تطبق تصحيح هولم على قيم p الخام الموجودة في مجموعة من النتائج 
+
     """تطبيق Holm على صفوف تحتوي p_raw (تعديل in-place)."""
     eligible = [r for r in rows if r.get(p_raw_key) is not None]
     if not eligible:
@@ -85,23 +80,23 @@ def apply_holm_to_rows(
                 significant_label if p_adj < alpha else not_significant_label
             )
 
+#________________________________________________
 
 def rank_biserial(u_stat: float, n_a: int, n_b: int) -> float:
     """معامل rank-biserial من إحصائية U (اختبار Mann-Whitney)."""
     return 1.0 - (2.0 * u_stat) / (n_a * n_b)
 
 
-def effect_magnitude(r_rb: float, style: EffectStyle = "en") -> str:
+def effect_magnitude(r_rb: float) -> str:
     """تصنيف حجم الأثر (عتبات Cohen-style على |r_rb|)."""
-    labels = _EFFECT_LABELS[style]
     abs_rb = abs(r_rb)
     if abs_rb < 0.147:
-        return labels[0]
+        return "ضعيف جداً"
     if abs_rb < 0.33:
-        return labels[1]
+        return "ضعيف"
     if abs_rb < 0.474:
-        return labels[2]
-    return labels[3]
+        return "متوسط"
+    return "قوي"
 
 
 def mann_whitney_u(
@@ -141,7 +136,6 @@ def mann_whitney_summary(
     a: Sequence[float],
     b: Sequence[float],
     *,
-    effect_style: EffectStyle = "en",
     min_n: int = MIN_SAMPLES_DEFAULT,
 ) -> Optional[dict[str, Any]]:
     """نتيجة Mann-Whitney جاهزة للعرض (قيم مُقرّبة + حجم الأثر)."""
@@ -152,7 +146,7 @@ def mann_whitney_summary(
         "u": round(raw["u"], 2),
         "p": round(raw["p"], 4),
         "rb": round(raw["rb"], 4),
-        "effect": effect_magnitude(raw["rb"], effect_style),
+        "effect": effect_magnitude(raw["rb"]),
         "med_a": round(raw["median_a"], 4),
         "med_b": round(raw["median_b"], 4),
         "mean_a": round(raw["mean_a"], 4),

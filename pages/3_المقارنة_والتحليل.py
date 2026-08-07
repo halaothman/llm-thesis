@@ -116,7 +116,7 @@ def mann_whitney_vanilla_rag(df: pd.DataFrame, metric: str, version: Optional[st
                 "U": round(res["u"], 2),
                 "p": round(res["p"], 4),
                 "Rank-Biserial": round(res["rb"], 4),
-                "حجم الأثر": effect_magnitude(res["rb"], "ar_long"),
+                "حجم الأثر": effect_magnitude(res["rb"]),
                 "ملاحظة": _significance_note(res["p"]),
             }
         )
