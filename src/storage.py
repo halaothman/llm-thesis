@@ -1,7 +1,6 @@
 """حفظ ملفات الأسئلة JSON تحت outputs/<مصدر>/ وبنية metadata للرسالة."""
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -112,7 +111,6 @@ def save_questions_separate_file(
     data: Dict[str, Any] = {
         "metadata": {
             "version": "1.0",
-            "created_at": datetime.now().isoformat(),
             "source_file": source_file,
             "total_questions": 0,
             "model": model_name,
@@ -148,8 +146,6 @@ def save_questions_separate_file(
     gen_block = {
         "model": model_name,
         "method": method,
-        "timestamp": datetime.now().isoformat(),
-        "generation_time": questions_data.get("generation_time", 0.0),
     }
     source_block = {
         "file": source_file,
